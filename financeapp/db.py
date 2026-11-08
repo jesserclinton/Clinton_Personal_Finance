@@ -40,7 +40,8 @@ CREATE TABLE IF NOT EXISTS transactions (
     category_id INTEGER REFERENCES categories(id),
     category_source TEXT,                -- 'bank', 'rule' or 'user'
     merchant_key TEXT NOT NULL,
-    fingerprint TEXT NOT NULL UNIQUE
+    fingerprint TEXT NOT NULL UNIQUE,
+    removed INTEGER NOT NULL DEFAULT 0   -- 1 = hidden from totals; kept so re-imports skip it
 );
 CREATE INDEX IF NOT EXISTS ix_tx_date ON transactions(date);
 CREATE INDEX IF NOT EXISTS ix_tx_merchant ON transactions(merchant_key);
@@ -83,4 +84,8 @@ def close_db(_exc=None):
 
 def init_db(conn):
     conn.executescript(SCHEMA)
+    # Upgrade databases created before a column existed.
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(transactions)")}
+    if "removed" not in cols:
+        conn.execute("ALTER TABLE transactions ADD COLUMN removed INTEGER NOT NULL DEFAULT 0")
     conn.commit()

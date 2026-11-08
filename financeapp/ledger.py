@@ -150,12 +150,75 @@ def set_category(db, tx_id, category_id, remember=False):
 def month_summary(db, month):
     """Income and spending per category for a YYYY-MM month."""
     return db.execute(
-        """SELECT COALESCE(c.name, 'Uncategorized') AS category,
+        """SELECT COALESCE(c.name, 'Uncategorized') AS category, t.category_id,
                   SUM(CASE WHEN t.amount_cents > 0 THEN t.amount_cents ELSE 0 END) AS income_cents,
                   SUM(CASE WHEN t.amount_cents < 0 THEN -t.amount_cents ELSE 0 END) AS spent_cents,
                   COUNT(*) AS n
            FROM transactions t LEFT JOIN categories c ON c.id = t.category_id
-           WHERE substr(t.date, 1, 7) = ?
-           GROUP BY category ORDER BY spent_cents DESC, income_cents DESC""",
+           WHERE substr(t.date, 1, 7) = ? AND t.removed = 0
+           GROUP BY t.category_id ORDER BY spent_cents DESC, income_cents DESC""",
         (month,),
     ).fetchall()
+
+
+def filter_transactions(db, month=None, category_ids=(), uncategorised=False,
+                        account_id=None, direction=None, search=None, removed=False):
+    """Transactions matching every filter given. Empty filters match all.
+
+    category_ids and uncategorised combine with OR (show these categories,
+    plus uncategorised ones if asked). direction is 'out' or 'in'.
+    """
+    where, params = ["t.removed = ?"], [1 if removed else 0]
+    if month:
+        where.append("substr(t.date, 1, 7) = ?")
+        params.append(month)
+    cat_terms = []
+    if category_ids:
+        cat_terms.append(f"t.category_id IN ({','.join('?' * len(category_ids))})")
+        params.extend(category_ids)
+    if uncategorised:
+        cat_terms.append("t.category_id IS NULL")
+    if cat_terms:
+        where.append("(" + " OR ".join(cat_terms) + ")")
+    if account_id:
+        where.append("t.account_id = ?")
+        params.append(account_id)
+    if direction == "out":
+        where.append("t.amount_cents < 0")
+    elif direction == "in":
+        where.append("t.amount_cents > 0")
+    if search:
+        where.append("(t.description LIKE ? OR t.original_description LIKE ?)")
+        params.extend([f"%{search}%"] * 2)
+    sql = """SELECT t.*, a.name AS account, c.name AS category FROM transactions t
+             JOIN accounts a ON a.id = t.account_id
+             LEFT JOIN categories c ON c.id = t.category_id"""
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY t.date DESC, t.id DESC"
+    return db.execute(sql, params).fetchall()
+
+
+def set_removed(db, tx_ids, removed=True):
+    """Hide transactions from every view and total, or bring them back.
+
+    Removed transactions stay in the database so importing an overlapping
+    file later doesn't add them again.
+    """
+    ids = [int(i) for i in tx_ids]
+    if not ids:
+        return 0
+    n = db.execute(
+        f"UPDATE transactions SET removed = ? WHERE id IN ({','.join('?' * len(ids))})",
+        [1 if removed else 0, *ids],
+    ).rowcount
+    db.commit()
+    return n
+
+
+def undo_import(db, import_id):
+    """Delete everything one import added, so the file can be imported again."""
+    n = db.execute("DELETE FROM transactions WHERE import_id = ?", (import_id,)).rowcount
+    db.execute("DELETE FROM imports WHERE id = ?", (import_id,))
+    db.commit()
+    return n

@@ -49,7 +49,7 @@ def create_app(test_config=None):
         db = dbmod.get_db()
         rows = ledger.month_summary(db, month)
         to_review = db.execute(
-            "SELECT COUNT(*) FROM transactions WHERE category_id IS NULL"
+            "SELECT COUNT(*) FROM transactions WHERE category_id IS NULL AND removed = 0"
         ).fetchone()[0]
         return render_template(
             "index.html",
@@ -109,22 +109,41 @@ def create_app(test_config=None):
         txs = dbmod.get_db().execute(
             """SELECT t.*, a.name AS account FROM transactions t
                JOIN accounts a ON a.id = t.account_id
-               WHERE t.category_id IS NULL ORDER BY t.date DESC"""
+               WHERE t.category_id IS NULL AND t.removed = 0 ORDER BY t.date DESC"""
         ).fetchall()
         return render_template("review.html", txs=txs, categories=categories())
 
     @app.route("/transactions")
     def transactions():
-        month = request.args.get("month") or date.today().strftime("%Y-%m")
-        txs = dbmod.get_db().execute(
-            """SELECT t.*, a.name AS account, c.name AS category FROM transactions t
-               JOIN accounts a ON a.id = t.account_id
-               LEFT JOIN categories c ON c.id = t.category_id
-               WHERE substr(t.date, 1, 7) = ? ORDER BY t.date DESC, t.id DESC""",
-            (month,),
-        ).fetchall()
+        args = request.args
+        # A month is shown by default; "all" (or a blank month) means every month.
+        month = args.get("month", date.today().strftime("%Y-%m"))
+        month = "" if month == "all" else month
+        picked = args.getlist("category")
+        cat_ids = [int(c) for c in picked if c.isdigit()]
+        filters = dict(
+            month=month or None,
+            category_ids=cat_ids,
+            uncategorised="none" in picked,
+            account_id=args.get("account", type=int),
+            direction=args.get("direction") or None,
+            search=(args.get("q") or "").strip() or None,
+            removed=args.get("removed") == "1",
+        )
+        db = dbmod.get_db()
+        txs = ledger.filter_transactions(db, **filters)
+        accounts = db.execute("SELECT * FROM accounts ORDER BY name").fetchall()
         return render_template(
-            "transactions.html", txs=txs, month=month, categories=categories()
+            "transactions.html",
+            txs=txs,
+            month=month,
+            picked=picked,
+            filters=filters,
+            categories=categories(),
+            accounts=accounts,
+            total_in=sum(t["amount_cents"] for t in txs if t["amount_cents"] > 0),
+            total_out=sum(-t["amount_cents"] for t in txs if t["amount_cents"] < 0),
+            next_url=request.full_path,
         )
 
     @app.post("/transactions/<int:tx_id>/category")
@@ -142,6 +161,27 @@ def create_app(test_config=None):
         flash(msg, "ok")
         return redirect(request.form.get("next") or url_for("review"))
 
+    @app.post("/transactions/remove")
+    def remove_transactions():
+        ids = request.form.getlist("tx")
+        restore = request.form.get("action") == "restore"
+        n = ledger.set_removed(dbmod.get_db(), ids, removed=not restore)
+        if not ids:
+            flash("Tick the transactions first.", "error")
+        elif restore:
+            flash(f"Restored {n} transaction(s).", "ok")
+        else:
+            flash(f"Removed {n} transaction(s). They won't count in any totals and "
+                  "won't come back if you import the same dates again. "
+                  "Tick \"Show removed\" to restore them.", "ok")
+        return redirect(request.form.get("next") or url_for("transactions"))
+
+    @app.post("/imports/<int:import_id>/undo")
+    def undo_import(import_id):
+        n = ledger.undo_import(dbmod.get_db(), import_id)
+        flash(f"Undid that import and deleted its {n} transaction(s).", "ok")
+        return redirect(url_for("import_view"))
+
     @app.route("/categories", methods=["GET", "POST"])
     def categories_view():
         db = dbmod.get_db()
@@ -153,7 +193,7 @@ def create_app(test_config=None):
             return redirect(url_for("categories_view"))
         rows = db.execute(
             """SELECT c.*, COUNT(t.id) AS n FROM categories c
-               LEFT JOIN transactions t ON t.category_id = c.id
+               LEFT JOIN transactions t ON t.category_id = c.id AND t.removed = 0
                GROUP BY c.id ORDER BY c.name"""
         ).fetchall()
         rules = db.execute(

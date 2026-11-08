@@ -24,8 +24,9 @@
 </script>
 <h3>Recent imports</h3>
 <table>
-  <tr><th>When</th><th>Account</th><th>File</th><th class="num">Added</th><th class="num">Skipped</th></tr>
-  {% for h in history %}<tr><td>{{ h.imported_at }}</td><td>{{ h.account }}</td><td>{{ h.filename }}</td><td class="num">{{ h.rows_added }}</td><td class="num">{{ h.rows_skipped }}</td></tr>
-  {% else %}<tr><td colspan="5" class="muted">No imports yet.</td></tr>{% endfor %}
+  <tr><th>When</th><th>Account</th><th>File</th><th class="num">Added</th><th class="num">Skipped</th><th></th></tr>
+  {% for h in history %}<tr><td>{{ h.imported_at }}</td><td>{{ h.account }}</td><td>{{ h.filename }}</td><td class="num">{{ h.rows_added }}</td><td class="num">{{ h.rows_skipped }}</td>
+    <td><form method="post" action="{{ url_for('undo_import', import_id=h.id) }}" onsubmit="return confirm('Delete every transaction this import added?')"><button>Undo</button></form></td></tr>
+  {% else %}<tr><td colspan="6" class="muted">No imports yet.</td></tr>{% endfor %}
 </table>
 {% endblock %}

@@ -1,20 +1,181 @@
 {% extends "base.html" %}
-{% from "_picker.html" import category_picker %}
+{% set n_active = (picked|length > 0)|int + (filters.account_id is not none)|int + (filters.direction is not none)|int
+                  + (filters.search is not none)|int + filters.removed|int %}
 {% block content %}
-<form class="inline" method="get"><label>Month <input type="month" name="month" value="{{ month }}"></label><button>Show</button></form>
-<p class="muted">Think the bank got a category wrong? Change it here. Your choice always wins over the bank's.</p>
-<table>
-  <tr><th>Date</th><th>Description</th><th class="num">Amount</th><th>Category</th></tr>
+<div class="toolbar">
+  <button type="button" class="secondary icon-btn" id="filters-toggle" aria-expanded="false" aria-controls="filters-panel">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18l-7 8.5V19l-4 2v-7.5z"/></svg>
+    Filters{% if n_active %} <span class="badge">{{ n_active }}</span>{% endif %}
+  </button>
+  <span class="muted scope">{{ month or 'All months' }}{% if filters.removed %} · removed transactions{% endif %}</span>
+  <span class="spacer"></span>
+  <span class="select-hint muted" id="select-hint">Select the transactions to {{ 'restore' if filters.removed else 'remove' }}</span>
+  <button type="button" class="secondary" id="select-cancel" hidden>Cancel</button>
+  <button type="button" class="icon-btn" id="select-start">
+    <svg viewBox="0 0 24 24" aria-hidden="true">{% if filters.removed %}<path d="M4 12a8 8 0 1 0 2.3-5.6M4 4v4h4"/>{% else %}<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>{% endif %}</svg>
+    {{ 'Restore' if filters.removed else 'Remove' }}
+  </button>
+  <button type="submit" form="bulk" id="select-confirm" name="action" value="{{ 'restore' if filters.removed else 'remove' }}" hidden disabled>
+    Confirm <span id="select-count"></span>
+  </button>
+</div>
+
+<form class="filters" id="filters-panel" method="get" hidden>
+  <button type="button" class="close-btn" id="filters-close" aria-label="Close filters">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+  </button>
+  <label>Month <input type="month" name="month" value="{{ month }}"></label>
+  <label>Category
+    <select name="category" multiple size="6">
+      <option value="none" {% if 'none' in picked %}selected{% endif %}>Uncategorized</option>
+      {% for c in categories %}
+        <option value="{{ c.id }}" {% if c.id|string in picked %}selected{% endif %}>{{ c.name }}</option>
+      {% endfor %}
+    </select>
+    <span class="hint">Ctrl/Cmd-click to pick several</span>
+  </label>
+  <div class="stack">
+    <label>Account
+      <select name="account">
+        <option value="">All accounts</option>
+        {% for a in accounts %}<option value="{{ a.id }}" {% if filters.account_id == a.id %}selected{% endif %}>{{ a.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Type
+      <select name="direction">
+        <option value="">Spending and income</option>
+        <option value="out" {% if filters.direction == 'out' %}selected{% endif %}>Spending only</option>
+        <option value="in" {% if filters.direction == 'in' %}selected{% endif %}>Income only</option>
+      </select>
+    </label>
+    <label>Search <input type="search" name="q" value="{{ filters.search or '' }}" placeholder="Walmart"></label>
+    <label class="row"><input type="checkbox" name="removed" value="1" {% if filters.removed %}checked{% endif %}> Show removed transactions</label>
+    <div class="actions">
+      <button>Apply</button>
+      <a href="{{ url_for('transactions', month=month or 'all') }}">Clear filters</a>
+      · <a href="{{ url_for('transactions', month='all', category=picked, account=filters.account_id, direction=filters.direction, q=filters.search) }}">All months</a>
+    </div>
+  </div>
+</form>
+
+<div class="totals">
+  <span>Transactions<div>{{ txs|length }}</div></span>
+  <span>Spent<div class="neg">{{ total_out|money }}</div></span>
+  <span>Income<div class="pos">{{ total_in|money }}</div></span>
+</div>
+
+<form id="bulk" method="post" action="{{ url_for('remove_transactions') }}">
+  <input type="hidden" name="next" value="{{ next_url }}">
+</form>
+<table id="tx-table">
+  <tr>
+    <th class="sel"><input type="checkbox" id="select-all" aria-label="Select all"></th>
+    <th>Date</th><th>Description</th><th class="num">Amount</th><th>Category</th><th class="edit-col"><span class="sr">Edit</span></th>
+  </tr>
   {% for t in txs %}
   <tr>
-    <td>{{ t.date }}</td>
+    <td class="sel"><input type="checkbox" name="tx" value="{{ t.id }}" form="bulk" aria-label="Select {{ t.description }}"></td>
+    <td class="date">{{ t.date }}</td>
     <td>{{ t.description }}<br><span class="muted">{{ t.account }}{% if t.bank_category %} · bank said: {{ t.bank_category }}{% endif %}</span></td>
     <td class="num {{ 'neg' if t.amount_cents < 0 else 'pos' }}">{{ t.amount_cents|money }}</td>
-    <td><strong>{{ t.category or 'Uncategorized' }}</strong> <span class="muted">{{ t.category_source or '' }}</span>
-      <details><summary class="muted">change</summary>{{ category_picker(t, categories, url_for('transactions', month=month), t.category_id) }}</details></td>
+    <td><a href="{{ url_for('transactions', month=month or 'all', category=t.category_id or 'none') }}"><strong>{{ t.category or 'Uncategorized' }}</strong></a> <span class="muted">{{ t.category_source or '' }}</span></td>
+    <td class="edit-col">
+      <button type="button" class="icon-only secondary edit-btn" aria-label="Edit {{ t.description }}" title="Edit"
+              data-action="{{ url_for('change_category', tx_id=t.id) }}" data-category="{{ t.category_id or '' }}"
+              data-desc="{{ t.description }}" data-meta="{{ t.date }} · {{ t.amount_cents|money }} · {{ t.account }}">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16zM13 7l4 4"/></svg>
+      </button>
+    </td>
   </tr>
   {% else %}
-  <tr><td colspan="4" class="muted">No transactions this month.</td></tr>
+  <tr><td colspan="6" class="muted">No transactions match these filters.</td></tr>
   {% endfor %}
 </table>
+
+<dialog id="edit-dialog" aria-labelledby="edit-title">
+  <form method="post" id="edit-form">
+    <header>
+      <h3 id="edit-title">Edit transaction</h3>
+      <button type="button" class="close-btn" data-close aria-label="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </header>
+    <p><strong id="edit-desc"></strong><br><span class="muted" id="edit-meta"></span></p>
+    <input type="hidden" name="next" value="{{ next_url }}">
+    <label>Category
+      <select name="category_id" id="edit-category">
+        <option value="">Choose…</option>
+        {% for c in categories %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Or a new category <input name="new_category" placeholder="e.g. Pets"></label>
+    <label class="row"><input type="checkbox" name="remember" checked> Remember for this merchant</label>
+    <footer>
+      <button type="button" class="secondary" data-close>Cancel</button>
+      <button>Save</button>
+    </footer>
+  </form>
+</dialog>
+
+<script>
+(() => {
+  // Filters panel
+  const panel = document.getElementById('filters-panel');
+  const toggle = document.getElementById('filters-toggle');
+  const setPanel = open => { panel.hidden = !open; toggle.setAttribute('aria-expanded', open); };
+  toggle.addEventListener('click', () => setPanel(panel.hidden));
+  document.getElementById('filters-close').addEventListener('click', () => { setPanel(false); toggle.focus(); });
+
+  // Remove / restore selection mode
+  const table = document.getElementById('tx-table');
+  const start = document.getElementById('select-start');
+  const confirmBtn = document.getElementById('select-confirm');
+  const cancel = document.getElementById('select-cancel');
+  const hint = document.getElementById('select-hint');
+  const count = document.getElementById('select-count');
+  const all = document.getElementById('select-all');
+  const boxes = () => [...document.querySelectorAll('input[name=tx]')];
+  const update = () => {
+    const n = boxes().filter(b => b.checked).length;
+    confirmBtn.disabled = n === 0;
+    count.textContent = n ? `(${n})` : '';
+    all.checked = n > 0 && n === boxes().length;
+  };
+  const setSelecting = on => {
+    table.classList.toggle('selecting', on);
+    start.hidden = on; confirmBtn.hidden = !on; cancel.hidden = !on;
+    hint.classList.toggle('show', on);
+    if (!on) boxes().forEach(b => b.checked = false);
+    update();
+  };
+  start.addEventListener('click', () => setSelecting(true));
+  cancel.addEventListener('click', () => setSelecting(false));
+  all.addEventListener('change', () => { boxes().forEach(b => b.checked = all.checked); update(); });
+  boxes().forEach(b => b.addEventListener('change', update));
+  confirmBtn.addEventListener('click', e => {
+    const n = boxes().filter(b => b.checked).length;
+    const verb = confirmBtn.value === 'restore' ? 'Restore' : 'Remove';
+    if (!confirm(`${verb} ${n} transaction(s)?`)) e.preventDefault();
+  });
+
+  // Edit dialog
+  const dialog = document.getElementById('edit-dialog');
+  const form = document.getElementById('edit-form');
+  document.querySelectorAll('.edit-btn').forEach(btn => btn.addEventListener('click', () => {
+    form.reset();
+    form.action = btn.dataset.action;
+    document.getElementById('edit-category').value = btn.dataset.category;
+    document.getElementById('edit-desc').textContent = btn.dataset.desc;
+    document.getElementById('edit-meta').textContent = btn.dataset.meta;
+    dialog.showModal();
+  }));
+  dialog.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => dialog.close()));
+  dialog.addEventListener('click', e => { if (e.target === dialog) dialog.close(); });  // backdrop
+  form.addEventListener('submit', e => {
+    if (!form.category_id.value && !form.new_category.value.trim()) {
+      e.preventDefault(); form.category_id.focus();
+    }
+  });
+})();
+</script>
 {% endblock %}

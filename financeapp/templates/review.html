@@ -7,7 +7,7 @@
   <tr><th>Date</th><th>Description</th><th class="num">Amount</th><th>Category</th></tr>
   {% for t in txs %}
   <tr>
-    <td>{{ t.date }}</td>
+    <td class="date">{{ t.date }}</td>
     <td>{{ t.description }}<br><span class="muted">{{ t.account }}</span></td>
     <td class="num {{ 'neg' if t.amount_cents < 0 else 'pos' }}">{{ t.amount_cents|money }}</td>
     <td>{{ category_picker(t, categories, url_for('review')) }}</td>
