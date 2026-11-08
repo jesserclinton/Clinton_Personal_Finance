@@ -82,3 +82,16 @@ def test_transactions_page_has_edit_dialog_and_hidden_controls(client):
     assert 'id="filters-panel" method="get" hidden' in html
     assert 'id="select-confirm"' in html and "hidden disabled" in html
     assert "<details>" not in html
+
+
+def test_active_filter_chips(client):
+    upload(client, "truist_sample.csv", account_id="auto")
+    html = client.get("/transactions?month=2026-11&category=1&category=2&q=gro&direction=out").get_data(as_text=True)
+    assert "November 2026" in html and "Groceries" in html and "Spending only" in html and "gro" in html
+    # Removing one category chip keeps the others
+    assert 'href="/transactions?month=2026-11&amp;category=2&amp;direction=out&amp;q=gro"' in html
+    # Removing the month chip switches to all months
+    assert 'href="/transactions?month=all&amp;category=1&amp;category=2&amp;direction=out&amp;q=gro"' in html
+    assert "Clear all" in html
+    plain = client.get("/transactions?month=all").get_data(as_text=True)
+    assert "All months" in plain and "Clear all" not in plain
