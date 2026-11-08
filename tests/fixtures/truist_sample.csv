@@ -1,5 +1,7 @@
-Date,Description,Check Number,Amount,Running Balance
-11/03/2026,POS DEBIT STARBUCKS #1234 RALEIGH NC,,-5.75,1994.25
-11/03/2026,POS DEBIT STARBUCKS #1234 RALEIGH NC,,-5.75,1988.50
-11/01/2026,ACH DEPOSIT ACME CORP PAYROLL,,2000.00,2000.00
-11/02/2026,CHECK,1042,-150.00,1838.50
+Status,Date,Original Description,Custom Description,Merchant,Geo,High Level Category,Category-Subcategory,Tag,Currency,Amount,Split Type,Note,Account Name,Account Number,Simple Description
+posted,11/06/2026, GROCER CO #0001ANYTOWN VA, -,Grocer Co,Anytown-VA-US-00000,Food Expenses,Groceries,-,$,-2.29,-, -,Truist - Credit Card - Truist - credit,x0001, Grocer Co
+posted,11/06/2026, GROCER CO #0001ANYTOWN VA, -,Grocer Co,Anytown-VA-US-00000,Food Expenses,Groceries,-,$,-2.29,-, -,Truist - Credit Card - Truist - credit,x0001, Grocer Co
+posted,11/04/2026, COFFEE HOUSE x0002 ANYTOWN VA, -,Coffee House,Anytown-VA-US-00000,Food Expenses,Restaurants/Dining,-,$,-13.42,-, -,USAA - Credit Card - CASH REWARDS VISA (x0002,x0002, Coffee House
+posted,11/02/2026, LANDLORD LLC RENT ACH DEBIT, -,-,US-,Miscellaneous Expenses,Other Expenses,-,$,"-1,500.00",-, -,Truist - Bank - Truist - checking,x0003, Landlord Llc Rent
+posted,11/01/2026, EMPLOYER INC PAYROLL ACH CREDIT, -,Employer Inc,US-,Income,Paychecks/Salary,-,$,"2,400.00",-, -,Truist - Bank - Truist - checking,x0003, Employer Inc
+pending,11/07/2026, BIG STORE #9999 ANYTOWN VA, -,Big Store,Anytown-VA-US-00000,Personal & Family,General Merchandise,-,$,-50.00,-, -,Truist - Credit Card - Truist - credit,x0001, Big Store

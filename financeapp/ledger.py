@@ -40,27 +40,62 @@ def categorise(db, mkey, bank_category, amount_cents):
     return None, None
 
 
+def account_from_name(db, name):
+    """Find or create an account named in a multi-account export.
+
+    'Truist - Credit Card - Truist - credit' -> bank 'truist', kind 'credit'.
+    """
+    row = db.execute("SELECT id FROM accounts WHERE name = ?", (name,)).fetchone()
+    if row:
+        return row["id"]
+    lower = name.lower()
+    bank = next((b for b in ("truist", "usaa") if lower.startswith(b)), "other")
+    kind = "credit" if "credit" in lower else "savings" if "saving" in lower else "checking"
+    return db.execute(
+        "INSERT INTO accounts (name, bank, kind) VALUES (?, ?, ?)", (name, bank, kind)
+    ).lastrowid
+
+
 def import_csv(db, account_id, filename, text):
-    acct = db.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
-    if acct is None:
-        raise ValueError("Unknown account")
-    bank = acct["bank"] if acct["bank"] in ("truist", "usaa") else None
-    _, rows = parse_csv(text, account_kind=acct["kind"], bank=bank)
+    """Import a CSV into one account, or with account_id=None into the
+    accounts named in the file (Truist's export can cover several)."""
+    kind = "checking"
+    if account_id is not None:
+        acct = db.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
+        if acct is None:
+            raise ValueError("Unknown account")
+        kind = acct["kind"]
+    _, rows = parse_csv(text, account_kind=kind)
+    if account_id is None and any(not r.account_name for r in rows):
+        raise ValueError(
+            "This file doesn't say which account each transaction belongs to. "
+            "Pick an account instead."
+        )
+
+    accounts = {}
+    if account_id is None:
+        for r in rows:
+            if r.account_name not in accounts:
+                accounts[r.account_name] = account_from_name(db, r.account_name)
+        if not accounts:
+            raise ValueError("The file has no transactions.")
+    first_account = account_id if account_id is not None else next(iter(accounts.values()))
 
     cur = db.execute(
-        "INSERT INTO imports (account_id, filename) VALUES (?, ?)", (account_id, filename)
+        "INSERT INTO imports (account_id, filename) VALUES (?, ?)", (first_account, filename)
     )
     import_id = cur.lastrowid
     seen = Counter()
     added = skipped = 0
     for row in rows:
-        ident = (row.date, row.amount_cents, row.original_description)
+        acct_id = account_id if account_id is not None else accounts[row.account_name]
+        ident = (acct_id, row.date, row.amount_cents, row.original_description)
         seen[ident] += 1
-        fp = _fingerprint(account_id, row, seen[ident])
+        fp = _fingerprint(acct_id, row, seen[ident])
         if db.execute("SELECT 1 FROM transactions WHERE fingerprint = ?", (fp,)).fetchone():
             skipped += 1
             continue
-        mkey = merchant_key(row.original_description or row.description)
+        mkey = merchant_key(row.merchant or row.original_description or row.description)
         cat_id, source = categorise(db, mkey, row.bank_category, row.amount_cents)
         db.execute(
             """INSERT INTO transactions
@@ -68,7 +103,7 @@ def import_csv(db, account_id, filename, text):
                 amount_cents, bank_category, category_id, category_source,
                 merchant_key, fingerprint)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (account_id, import_id, row.date, row.description, row.original_description,
+            (acct_id, import_id, row.date, row.description, row.original_description,
              row.amount_cents, row.bank_category, cat_id, source, mkey, fp),
         )
         added += 1
@@ -77,7 +112,8 @@ def import_csv(db, account_id, filename, text):
         (added, skipped, import_id),
     )
     db.commit()
-    return {"added": added, "skipped": skipped, "import_id": import_id}
+    return {"added": added, "skipped": skipped, "import_id": import_id,
+            "accounts": len(accounts) or 1}
 
 
 def set_category(db, tx_id, category_id, remember=False):

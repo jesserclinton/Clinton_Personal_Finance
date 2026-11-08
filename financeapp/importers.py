@@ -1,8 +1,13 @@
 """Parse bank CSV exports into a common transaction shape.
 
-Header names below come from third-party guides, not the banks' own docs,
-so each field accepts several aliases. Adjust them once real exports are
-in hand.
+Formats:
+- 'truist': Truist online banking's ExportData.csv (confirmed from a real
+  export). It can hold several accounts, including linked accounts at other
+  banks, has its own categories, and already reports money out as negative.
+- 'usaa': USAA's own CSV (from third-party guides; not yet confirmed).
+- 'other': anything with recognisable Date/Description/Amount columns.
+
+Each field accepts several header aliases.
 """
 import csv
 import io
@@ -14,12 +19,15 @@ from decimal import Decimal, InvalidOperation
 # canonical field -> accepted header names (lower-cased, stripped)
 ALIASES = {
     "date": ["date", "posted date", "posting date", "transaction date", "post date"],
-    "description": ["description", "payee", "merchant", "name"],
+    "description": ["simple description", "description", "payee", "name"],
     "original_description": ["original description", "memo", "details"],
+    "merchant": ["merchant"],
+    "subcategory": ["category-subcategory"],
+    "account_name": ["account name"],
     "amount": ["amount", "transaction amount"],
     "debit": ["debit", "withdrawal", "withdrawals", "debit amount"],
     "credit": ["credit", "deposit", "deposits", "credit amount"],
-    "category": ["category", "transaction category"],
+    "category": ["category", "transaction category", "high level category"],
     "check_number": ["check number", "check #", "check no", "check"],
     "status": ["status"],
 }
@@ -38,6 +46,8 @@ class ParsedRow:
     original_description: str
     amount_cents: int    # negative = money out
     bank_category: str | None
+    merchant: str = ""
+    account_name: str | None = None   # set when the file covers several accounts
 
 
 def _map_headers(headers):
@@ -54,10 +64,10 @@ def _map_headers(headers):
 def detect_bank(headers):
     """Best guess at which bank produced a file, from its headers."""
     m = _map_headers(headers)
+    if "account_name" in m and "subcategory" in m:
+        return "truist"
     if "category" in m and "original_description" in m:
         return "usaa"
-    if "check_number" in m or any(h.strip().lower() == "running balance" for h in headers):
-        return "truist"
     return "other"
 
 
@@ -87,12 +97,20 @@ def parse_money(value):
     return -cents if negative else cents
 
 
-def parse_csv(text, account_kind="checking", bank=None):
-    """Parse CSV text. Returns (bank, rows).
+def _cell(raw, m, field):
+    """A cleaned cell value; the '-' placeholder Truist uses counts as blank."""
+    if field not in m:
+        return ""
+    v = (raw.get(m[field]) or "").strip()
+    return "" if v == "-" else v
 
-    Amounts are normalised so negative always means money out. Credit card
-    exports that report charges as positive are flipped when account_kind is
-    'credit' and the bank is known to do that (USAA).
+
+def parse_csv(text, account_kind="checking"):
+    """Parse CSV text. Returns (format, rows).
+
+    Amounts are normalised so negative always means money out. USAA's own
+    credit card export reports charges as positive, so those are flipped when
+    account_kind is 'credit'.
     """
     text = text.lstrip("﻿")
     reader = csv.DictReader(io.StringIO(text))
@@ -107,7 +125,7 @@ def parse_csv(text, account_kind="checking", bank=None):
     if "amount" not in m and not ("debit" in m or "credit" in m):
         raise ImportError_("Couldn't find an Amount (or Debit/Credit) column.")
 
-    bank = bank or detect_bank(reader.fieldnames)
+    bank = detect_bank(reader.fieldnames)
     flip = account_kind == "credit" and bank == "usaa"
 
     rows = []
@@ -126,16 +144,21 @@ def parse_csv(text, account_kind="checking", bank=None):
             continue
         if flip:
             cents = -cents
-        desc = (raw.get(m["description"]) or "").strip()
-        orig = (raw.get(m["original_description"]) or "").strip() if "original_description" in m else ""
-        cat = (raw.get(m["category"]) or "").strip() if "category" in m else ""
+        desc = _cell(raw, m, "description")
+        orig = _cell(raw, m, "original_description")
+        merchant = _cell(raw, m, "merchant")
+        # Prefer the specific subcategory (Groceries) over the broad group
+        # (Food Expenses) when the file has both.
+        cat = _cell(raw, m, "subcategory") or _cell(raw, m, "category")
         rows.append(
             ParsedRow(
                 date=parse_date(raw[m["date"]]),
-                description=desc or orig,
+                description=desc or merchant or orig,
                 original_description=orig or desc,
                 amount_cents=cents,
                 bank_category=cat or None,
+                merchant=merchant,
+                account_name=_cell(raw, m, "account_name") or None,
             )
         )
     return bank, rows

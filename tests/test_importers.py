@@ -6,14 +6,37 @@ from .conftest import fixture_text
 
 
 def test_detects_banks():
-    assert detect_bank(["Date", "Description", "Check Number", "Amount", "Running Balance"]) == "truist"
+    assert detect_bank(["Status", "Date", "Original Description", "Merchant", "High Level Category",
+                        "Category-Subcategory", "Amount", "Account Name", "Simple Description"]) == "truist"
+    assert detect_bank(["Date", "Description", "Check Number", "Amount", "Running Balance"]) == "other"
     assert detect_bank(["Date", "Description", "Original Description", "Category", "Amount"]) == "usaa"
     assert detect_bank(["Date", "Description", "Amount"]) == "other"
 
 
-def test_truist_has_no_category():
+def test_truist_export():
     bank, rows = parse_csv(fixture_text("truist_sample.csv"))
     assert bank == "truist"
+    assert len(rows) == 5  # pending row skipped
+    first = rows[0]
+    assert first.date == "2026-11-06" and first.amount_cents == -229
+    assert first.bank_category == "Groceries"          # subcategory, not "Food Expenses"
+    assert first.description == "Grocer Co"
+    assert first.merchant == "Grocer Co"
+    assert first.account_name == "Truist - Credit Card - Truist - credit"
+    rent = rows[3]
+    assert rent.amount_cents == -150000 and rent.merchant == ""   # "-" means blank
+    assert rows[4].amount_cents == 240000
+
+
+def test_truist_credit_card_is_not_flipped():
+    # Truist already reports card charges as negative.
+    _, rows = parse_csv(fixture_text("truist_sample.csv"), account_kind="credit")
+    assert rows[0].amount_cents == -229
+
+
+def test_plain_file_has_no_category():
+    bank, rows = parse_csv(fixture_text("plain_sample.csv"))
+    assert bank == "other"
     assert len(rows) == 4
     assert all(r.bank_category is None for r in rows)
     assert rows[0].date == "2026-11-03" and rows[0].amount_cents == -575

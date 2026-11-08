@@ -4,8 +4,9 @@
 <form method="post" enctype="multipart/form-data">
   <p><label>Account
     <select name="account_id" id="acct">
+      <option value="auto" selected>Use the accounts named in the file (Truist export)</option>
       {% for a in accounts %}<option value="{{ a.id }}">{{ a.name }} ({{ a.bank }}, {{ a.kind }})</option>{% endfor %}
-      <option value="new" {% if not accounts %}selected{% endif %}>+ New account…</option>
+      <option value="new">+ New account…</option>
     </select></label></p>
   <fieldset id="newacct">
     <legend>New account</legend>

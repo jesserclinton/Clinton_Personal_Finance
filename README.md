@@ -21,8 +21,9 @@ which is git-ignored, as are all `.csv` files outside `tests/fixtures/`.
 1. **Your saved rules first.** When you change a category and tick
    "remember for this merchant", future transactions from that merchant
    go to your category, even if the bank says otherwise.
-2. **The bank's category next** (USAA includes one; Truist doesn't). New
-   bank categories are created automatically.
+2. **The bank's category next.** Truist's export includes one (the
+   specific subcategory, such as Groceries, is used). New bank categories
+   are created automatically.
 3. **Otherwise it waits on the Review page** for you to pick a category or
    type a new one.
 
@@ -34,13 +35,13 @@ transactions that are already in the database.
 
 - **USAA:** desktop site, open the account, Export/Download from the
   transaction history, choose CSV. About 18 months of history is available.
-- **Truist:** desktop site, open the account, Download/Export from the
-  transaction history, choose CSV. Exports may be limited to about 90 days
-  at a time.
+- **Truist:** the `ExportData.csv` export. It can include several accounts,
+  including linked accounts at other banks, so import it with "Use the
+  accounts named in the file" and each account is created automatically.
 
 Column names are matched flexibly (see `ALIASES` in
-`financeapp/importers.py`); they are based on third-party guides and should
-be confirmed against real exports.
+`financeapp/importers.py`). The Truist format is confirmed from a real
+export; the USAA format is still based on third-party guides.
 
 ## Tests
 

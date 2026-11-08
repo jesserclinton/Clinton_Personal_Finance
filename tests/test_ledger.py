@@ -4,11 +4,33 @@ from .conftest import fixture_text, make_account
 
 
 def test_import_dedupes_overlapping_files(db):
-    acct = make_account(db, "Truist Checking", "truist")
-    first = ledger.import_csv(db, acct, "a.csv", fixture_text("truist_sample.csv"))
-    again = ledger.import_csv(db, acct, "b.csv", fixture_text("truist_sample.csv"))
+    acct = make_account(db, "Checking", "other")
+    first = ledger.import_csv(db, acct, "a.csv", fixture_text("plain_sample.csv"))
+    again = ledger.import_csv(db, acct, "b.csv", fixture_text("plain_sample.csv"))
     assert first["added"] == 4  # the two identical Starbucks rows both count
-    assert again == {"added": 0, "skipped": 4, "import_id": again["import_id"]}
+    assert (again["added"], again["skipped"]) == (0, 4)
+
+
+def test_truist_export_creates_accounts_and_uses_categories(db):
+    result = ledger.import_csv(db, None, "ExportData.csv", fixture_text("truist_sample.csv"))
+    assert (result["added"], result["accounts"]) == (5, 3)
+    accts = {r["name"]: (r["bank"], r["kind"]) for r in db.execute("SELECT * FROM accounts")}
+    assert accts["Truist - Credit Card - Truist - credit"] == ("truist", "credit")
+    assert accts["Truist - Bank - Truist - checking"] == ("truist", "checking")
+    assert accts["USAA - Credit Card - CASH REWARDS VISA (x0002"] == ("usaa", "credit")
+    cats = {r["name"]: r["kind"] for r in db.execute("SELECT * FROM categories")}
+    assert cats["Groceries"] == "expense" and cats["Paychecks/Salary"] == "income"
+    keys = {r[0] for r in db.execute("SELECT merchant_key FROM transactions")}
+    assert "GROCER CO" in keys  # from the clean Merchant column
+
+    again = ledger.import_csv(db, None, "ExportData.csv", fixture_text("truist_sample.csv"))
+    assert (again["added"], again["skipped"]) == (0, 5)
+
+
+def test_file_without_account_column_needs_an_account(db):
+    import pytest
+    with pytest.raises(ValueError):
+        ledger.import_csv(db, None, "a.csv", fixture_text("plain_sample.csv"))
 
 
 def test_bank_categories_are_used_and_created(db):
@@ -24,8 +46,8 @@ def test_bank_categories_are_used_and_created(db):
 
 
 def test_uncategorised_then_remembered(db):
-    acct = make_account(db, "Truist Checking", "truist")
-    ledger.import_csv(db, acct, "a.csv", fixture_text("truist_sample.csv"))
+    acct = make_account(db, "Checking", "other")
+    ledger.import_csv(db, acct, "a.csv", fixture_text("plain_sample.csv"))
     uncategorised = db.execute("SELECT id FROM transactions WHERE category_id IS NULL").fetchall()
     assert len(uncategorised) == 4
 
@@ -64,8 +86,8 @@ def test_rule_beats_bank_category_on_future_imports(db):
 
 
 def test_manual_choice_is_not_overwritten_by_a_rule(db):
-    acct = make_account(db, "Truist Checking", "truist")
-    ledger.import_csv(db, acct, "a.csv", fixture_text("truist_sample.csv"))
+    acct = make_account(db, "Checking", "other")
+    ledger.import_csv(db, acct, "a.csv", fixture_text("plain_sample.csv"))
     a, b = [r["id"] for r in db.execute("SELECT id FROM transactions WHERE description LIKE '%STARBUCKS%'")]
     gift = ledger.get_or_create_category(db, "Gifts")
     coffee = ledger.get_or_create_category(db, "Coffee")

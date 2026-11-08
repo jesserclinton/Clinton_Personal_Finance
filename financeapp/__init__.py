@@ -65,7 +65,9 @@ def create_app(test_config=None):
         db = dbmod.get_db()
         if request.method == "POST":
             account_id = request.form.get("account_id")
-            if account_id == "new":
+            if account_id == "auto":
+                account_id = None
+            elif account_id == "new":
                 name = request.form.get("account_name", "").strip()
                 if not name:
                     flash("Give the new account a name.", "error")
@@ -82,7 +84,9 @@ def create_app(test_config=None):
                 return redirect(url_for("import_view"))
             try:
                 text = upload.read().decode("utf-8-sig")
-                result = ledger.import_csv(db, int(account_id), upload.filename, text)
+                result = ledger.import_csv(
+                    db, int(account_id) if account_id else None, upload.filename, text
+                )
             except (ImportError_, UnicodeDecodeError, ValueError) as exc:
                 db.rollback()
                 flash(f"Couldn't import {upload.filename}: {exc}", "error")
