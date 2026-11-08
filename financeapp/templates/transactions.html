@@ -70,6 +70,7 @@
   <span>Spent<div class="neg">{{ total_out|money }}</div></span>
   <span>Income<div class="pos">{{ total_in|money }}</div></span>
 </div>
+{% if n_transfers %}<p class="muted">{{ n_transfers }} transfer(s) shown below aren't counted in these totals.</p>{% endif %}
 
 <form id="bulk" method="post" action="{{ url_for('remove_transactions') }}">
   <input type="hidden" name="next" value="{{ next_url }}">
@@ -80,12 +81,12 @@
     <th>Date</th><th>Description</th><th class="num">Amount</th><th>Category</th><th class="edit-col"><span class="sr">Edit</span></th>
   </tr>
   {% for t in txs %}
-  <tr>
+  <tr{% if t.category_kind == 'transfer' %} class="transfer"{% endif %}>
     <td class="sel"><input type="checkbox" name="tx" value="{{ t.id }}" form="bulk" aria-label="Select {{ t.description }}"></td>
     <td class="date">{{ t.date }}</td>
     <td>{{ t.description }}<br><span class="muted">{{ t.account }}{% if t.bank_category %} · bank said: {{ t.bank_category }}{% endif %}</span></td>
     <td class="num {{ 'neg' if t.amount_cents < 0 else 'pos' }}">{{ t.amount_cents|money }}</td>
-    <td><a href="{{ url_for('transactions', month=month or 'all', category=t.category_id or 'none') }}"><strong>{{ t.category or 'Uncategorized' }}</strong></a> <span class="muted">{{ t.category_source or '' }}</span></td>
+    <td><a href="{{ url_for('transactions', month=month or 'all', category=t.category_id or 'none') }}"><strong>{{ t.category or 'Uncategorized' }}</strong></a> <span class="muted">{{ t.category_source or '' }}</span>{% if t.category_kind == 'transfer' %} <span class="tag">transfer</span>{% endif %}</td>
     <td class="edit-col">
       <button type="button" class="icon-only secondary edit-btn" aria-label="Edit {{ t.description }}" title="Edit"
               data-action="{{ url_for('change_category', tx_id=t.id) }}" data-category="{{ t.category_id or '' }}"

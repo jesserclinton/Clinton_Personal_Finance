@@ -3,12 +3,22 @@
 <h2>Categories</h2>
 <form class="inline" method="post">
   <input name="name" placeholder="New category" required>
-  <select name="kind"><option value="expense">Expense</option><option value="income">Income</option><option value="transfer">Transfer</option></select>
+  <select name="kind"><option value="expense">Expense</option><option value="income">Income</option><option value="transfer">Transfer (not counted)</option></select>
   <button>Add</button>
 </form>
+<p class="muted">Transfers are money moving between your own accounts, like paying a credit card from checking. They stay in your transaction list but are left out of income and spending totals.</p>
 <table>
-  <tr><th>Name</th><th>Kind</th><th class="num">Transactions</th></tr>
-  {% for c in rows %}<tr><td>{{ c.name }}</td><td>{{ c.kind }}</td><td class="num">{{ c.n }}</td></tr>
+  <tr><th>Name</th><th>Type</th><th class="num">Transactions</th></tr>
+  {% for c in rows %}<tr{% if c.kind == 'transfer' %} class="transfer"{% endif %}><td>{{ c.name }}</td>
+    <td><form method="post" action="{{ url_for('change_category_kind', category_id=c.id) }}" class="kind-form">
+      <select name="kind" aria-label="Type for {{ c.name }}" onchange="this.form.submit()">
+        {% for k, label in [('expense', 'Expense'), ('income', 'Income'), ('transfer', 'Transfer (not counted)')] %}
+          <option value="{{ k }}" {% if c.kind == k %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <noscript><button>Save</button></noscript>
+    </form></td>
+    <td class="num">{{ c.n }}</td></tr>
   {% else %}<tr><td colspan="3" class="muted">None yet. Bank categories are added automatically on import.</td></tr>{% endfor %}
 </table>
 <h3>Remembered merchants</h3>

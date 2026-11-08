@@ -22,6 +22,7 @@ def create_app(test_config=None):
 
     with app.app_context():
         dbmod.init_db(dbmod.get_db())
+        ledger.upgrade(dbmod.get_db())
     app.teardown_appcontext(dbmod.close_db)
 
     @app.template_filter("money")
@@ -47,7 +48,9 @@ def create_app(test_config=None):
     def index():
         month = request.args.get("month") or date.today().strftime("%Y-%m")
         db = dbmod.get_db()
-        rows = ledger.month_summary(db, month)
+        all_rows = ledger.month_summary(db, month)
+        rows = [r for r in all_rows if ledger.counts_in_totals(r)]
+        transfers = [r for r in all_rows if not ledger.counts_in_totals(r)]
         to_review = db.execute(
             "SELECT COUNT(*) FROM transactions WHERE category_id IS NULL AND removed = 0"
         ).fetchone()[0]
@@ -55,6 +58,7 @@ def create_app(test_config=None):
             "index.html",
             month=month,
             rows=rows,
+            transfers=transfers,
             income=sum(r["income_cents"] for r in rows),
             spent=sum(r["spent_cents"] for r in rows),
             to_review=to_review,
@@ -132,6 +136,7 @@ def create_app(test_config=None):
         )
         db = dbmod.get_db()
         txs = ledger.filter_transactions(db, **filters)
+        counted = [t for t in txs if ledger.counts_in_totals(t)]
         accounts = db.execute("SELECT * FROM accounts ORDER BY name").fetchall()
         return render_template(
             "transactions.html",
@@ -141,8 +146,9 @@ def create_app(test_config=None):
             filters=filters,
             categories=categories(),
             accounts=accounts,
-            total_in=sum(t["amount_cents"] for t in txs if t["amount_cents"] > 0),
-            total_out=sum(-t["amount_cents"] for t in txs if t["amount_cents"] < 0),
+            total_in=sum(t["amount_cents"] for t in counted if t["amount_cents"] > 0),
+            total_out=sum(-t["amount_cents"] for t in counted if t["amount_cents"] < 0),
+            n_transfers=len(txs) - len(counted),
             next_url=request.full_path,
             chips=_filter_chips(month, picked, filters, categories(), accounts),
         )
@@ -244,6 +250,14 @@ def create_app(test_config=None):
                JOIN categories c ON c.id = r.category_id ORDER BY r.merchant_key"""
         ).fetchall()
         return render_template("categories.html", rows=rows, rules=rules)
+
+    @app.post("/categories/<int:category_id>/kind")
+    def change_category_kind(category_id):
+        try:
+            ledger.set_category_kind(dbmod.get_db(), category_id, request.form.get("kind"))
+        except ValueError:
+            abort(400)
+        return redirect(url_for("categories_view"))
 
     @app.post("/rules/<int:rule_id>/delete")
     def delete_rule(rule_id):

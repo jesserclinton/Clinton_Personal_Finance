@@ -163,3 +163,73 @@ def test_old_database_gets_removed_column(tmp_path):
     init_db(conn)
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(transactions)")}
     assert "removed" in cols
+
+
+def test_card_payment_becomes_transfer_and_leaves_totals(db):
+    acct = make_account(db, "USAA Visa", "usaa", "credit")
+    ledger.import_csv(db, acct, "u.csv", fixture_text("usaa_credit_sample.csv"))
+    kind = db.execute("SELECT kind FROM categories WHERE name='Credit Card Payment'").fetchone()[0]
+    assert kind == "transfer"
+    rows = ledger.month_summary(db, "2026-11")
+    counted = [r for r in rows if ledger.counts_in_totals(r)]
+    assert sum(r["income_cents"] for r in counted) == 0          # payment not income
+    assert sum(r["spent_cents"] for r in counted) == 1549         # Netflix only
+
+
+def test_transfer_detection():
+    assert ledger.looks_like_transfer("Credit Card Payment")
+    assert ledger.looks_like_transfer("Transfers")
+    assert not ledger.looks_like_transfer("Groceries")
+
+
+def test_change_category_kind(db):
+    cid = ledger.get_or_create_category(db, "Savings move")
+    ledger.set_category_kind(db, cid, "transfer")
+    assert db.execute("SELECT kind FROM categories WHERE id=?", (cid,)).fetchone()[0] == "transfer"
+    import pytest
+    with pytest.raises(ValueError):
+        ledger.set_category_kind(db, cid, "bogus")
+
+
+def test_payment_descriptions_become_transfers_whatever_the_bank_category(db):
+    text = (
+        "Status,Date,Original Description,Custom Description,Merchant,Geo,High Level Category,"
+        "Category-Subcategory,Tag,Currency,Amount,Split Type,Note,Account Name,Account Number,Simple Description\n"
+        "posted,11/05/2026, PAYMENT RECEIVED THANK YOU, -,-,US-,Income,Other Income,-,$,500.00,-, -,"
+        "Truist - Credit Card - Truist - credit,x0001, Credit Card Payment Received\n"
+        "posted,11/05/2026, USAA CREDIT CRD PAYMENT ACH DEBIT, -,USAA,US-,Miscellaneous Expenses,Other Expenses,-,$,-500.00,-, -,"
+        "Truist - Bank - Truist - checking,x0003, Payment to USAA\n"
+        "posted,11/05/2026, GROCER CO, -,Grocer Co,US-,Food Expenses,Groceries,-,$,-20.00,-, -,"
+        "Truist - Bank - Truist - checking,x0003, Grocer Co\n"
+    )
+    ledger.import_csv(db, None, "e.csv", text)
+    rows = {r["description"]: r for r in ledger.filter_transactions(db)}
+    for d in ("Credit Card Payment Received", "Payment to USAA"):
+        assert rows[d]["category"] == "Credit Card Payment" and rows[d]["category_kind"] == "transfer"
+        assert rows[d]["category_source"] == "auto"
+    assert rows["Grocer Co"]["category"] == "Groceries"
+    counted = [r for r in ledger.month_summary(db, "2026-11") if ledger.counts_in_totals(r)]
+    assert sum(r["income_cents"] for r in counted) == 0
+    assert sum(r["spent_cents"] for r in counted) == 2000
+
+
+def test_upgrade_fixes_existing_database(db):
+    # Simulate data imported before transfers existed
+    db.execute("PRAGMA user_version = 0")
+    acct = make_account(db, "Checking", "other")
+    exp = db.execute("INSERT INTO categories (name, kind) VALUES ('Other Expenses', 'expense')").lastrowid
+    old = db.execute("INSERT INTO categories (name, kind) VALUES ('Credit Card Payment', 'expense')").lastrowid
+    for i, (desc, cat, src) in enumerate([("Payment to USAA", exp, "bank"),
+                                          ("Payment to USAA", exp, "user"),
+                                          ("Rent", exp, "bank"),
+                                          ("Autopay", old, "bank")]):
+        db.execute("""INSERT INTO transactions (account_id, date, description, amount_cents, category_id,
+                      category_source, merchant_key, fingerprint) VALUES (?, '2026-11-01', ?, -100, ?, ?, 'K', ?)""",
+                   (acct, desc, cat, src, f"fp{i}"))
+    db.commit()
+    ledger.upgrade(db)
+    kinds = {r["name"]: r["kind"] for r in db.execute("SELECT * FROM categories")}
+    assert kinds["Credit Card Payment"] == "transfer"
+    cats = [r[0] for r in db.execute("SELECT category_id FROM transactions ORDER BY id")]
+    assert cats == [old, exp, exp, old]   # the user's own choice is left alone
+    assert db.execute("PRAGMA user_version").fetchone()[0] == 1
