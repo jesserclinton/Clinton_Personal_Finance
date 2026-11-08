@@ -240,8 +240,19 @@ def month_summary(db, month):
     ).fetchall()
 
 
+# Column -> ORDER BY clause; {d} is ASC or DESC. Ties fall back to newest first.
+SORTS = {
+    "date": "t.date {d}, t.id {d}",
+    "description": "t.description COLLATE NOCASE {d}, t.date DESC, t.id DESC",
+    "amount": "t.amount_cents {d}, t.date DESC, t.id DESC",
+    "category": "COALESCE(c.name, 'Uncategorized') COLLATE NOCASE {d}, t.date DESC, t.id DESC",
+}
+DEFAULT_DESCENDING = {"date": True, "description": False, "amount": False, "category": False}
+
+
 def filter_transactions(db, month=None, category_ids=(), uncategorised=False,
-                        account_id=None, direction=None, search=None, removed=False):
+                        account_id=None, direction=None, search=None, removed=False,
+                        sort="date", descending=True):
     """Transactions matching every filter given. Empty filters match all.
 
     category_ids and uncategorised combine with OR (show these categories,
@@ -275,7 +286,8 @@ def filter_transactions(db, month=None, category_ids=(), uncategorised=False,
              LEFT JOIN categories c ON c.id = t.category_id"""
     if where:
         sql += " WHERE " + " AND ".join(where)
-    sql += " ORDER BY t.date DESC, t.id DESC"
+    order = SORTS.get(sort, SORTS["date"]).format(d="DESC" if descending else "ASC")
+    sql += " ORDER BY " + order
     return db.execute(sql, params).fetchall()
 
 

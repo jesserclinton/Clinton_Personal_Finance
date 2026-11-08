@@ -57,6 +57,7 @@
     </label>
     <label>Search <input type="search" name="q" value="{{ filters.search or '' }}" placeholder="Walmart"></label>
     <label class="row"><input type="checkbox" name="removed" value="1" {% if filters.removed %}checked{% endif %}> Show removed transactions</label>
+    {% if query.sort %}<input type="hidden" name="sort" value="{{ query.sort }}"><input type="hidden" name="dir" value="{{ query.dir }}">{% endif %}
     <div class="actions">
       <button>Apply</button>
       <a href="{{ url_for('transactions', month=month or 'all') }}">Clear filters</a>
@@ -78,7 +79,13 @@
 <table id="tx-table">
   <tr>
     <th class="sel"><input type="checkbox" id="select-all" aria-label="Select all"></th>
-    <th>Date</th><th>Description</th><th class="num">Amount</th><th>Category</th><th class="edit-col"><span class="sr">Edit</span></th>
+    {% for col, label, cls in [('date', 'Date', ''), ('description', 'Description', ''), ('amount', 'Amount', 'num'), ('category', 'Category', '')] %}
+    <th class="sortable {{ cls }}{% if sort == col %} sorted{% endif %}"
+        aria-sort="{{ ('descending' if descending else 'ascending') if sort == col else 'none' }}">
+      <a href="{{ sort_url(col) }}" title="Sort by {{ label|lower }}">{{ label }}
+        <span class="sort-arrow" aria-hidden="true">{% if sort == col %}{{ '▼' if descending else '▲' }}{% else %}↕{% endif %}</span></a>
+    </th>
+    {% endfor %}<th class="edit-col"><span class="sr">Edit</span></th>
   </tr>
   {% for t in txs %}
   <tr{% if t.category_kind == 'transfer' %} class="transfer"{% endif %}>

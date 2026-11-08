@@ -111,3 +111,18 @@ def test_categories_page_changes_kind(client):
     r = client.post("/categories/1/kind", data={"kind": "transfer"}, follow_redirects=True)
     assert r.status_code == 200
     assert client.post("/categories/1/kind", data={"kind": "nope"}).status_code == 400
+
+
+def test_sort_headers_keep_filters_and_toggle(client):
+    upload(client, "truist_sample.csv", account_id="auto")
+    html = client.get("/transactions?month=all&direction=out").get_data(as_text=True)
+    # Default is newest first; clicking Date flips to oldest first, other columns start A-Z / low-high
+    assert 'href="/transactions?month=all&amp;direction=out&amp;sort=date&amp;dir=asc"' in html
+    assert 'href="/transactions?month=all&amp;direction=out&amp;sort=description&amp;dir=asc"' in html
+    html = client.get("/transactions?month=all&direction=out&sort=amount&dir=asc").get_data(as_text=True)
+    assert 'aria-sort="ascending"' in html
+    assert 'href="/transactions?month=all&amp;direction=out&amp;sort=amount&amp;dir=desc"' in html
+    assert html.index("Landlord Llc Rent") < html.index("Grocer Co")
+    # Removing a filter chip keeps the sort
+    assert 'href="/transactions?month=all&amp;sort=amount&amp;dir=asc"' in html
+    assert 'name="sort" value="amount"' in html

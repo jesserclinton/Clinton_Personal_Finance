@@ -233,3 +233,16 @@ def test_upgrade_fixes_existing_database(db):
     cats = [r[0] for r in db.execute("SELECT category_id FROM transactions ORDER BY id")]
     assert cats == [old, exp, exp, old]   # the user's own choice is left alone
     assert db.execute("PRAGMA user_version").fetchone()[0] == 1
+
+
+def test_sorting(db):
+    ledger.import_csv(db, None, "ExportData.csv", fixture_text("truist_sample.csv"))
+    desc = lambda **kw: [r["description"] for r in ledger.filter_transactions(db, **kw)]
+    assert desc(sort="date", descending=True)[0] == "Grocer Co"            # 11/06 newest
+    assert desc(sort="date", descending=False)[0] == "Employer Inc"        # 11/01 oldest
+    assert desc(sort="description", descending=False) == sorted(desc(), key=str.lower)
+    assert desc(sort="amount", descending=False)[0] == "Landlord Llc Rent"  # biggest spend
+    assert desc(sort="amount", descending=True)[0] == "Employer Inc"        # biggest income
+    cats = [r["category"] for r in ledger.filter_transactions(db, sort="category", descending=False)]
+    assert cats == sorted(cats, key=str.lower)
+    assert desc(sort="bogus") == desc()  # unknown sort falls back to date
