@@ -26,6 +26,7 @@
       </select>
     </label>
     <label>Search <input type="search" name="q" value="{{ filters.search or '' }}" placeholder="Walmart"></label>
+    <label class="row"><input type="checkbox" name="removed" value="1" {% if filters.removed %}checked{% endif %}> Show removed transactions</label>
     <div>
       <button>Filter</button>
       <a href="{{ url_for('transactions', month=month or 'all') }}">Clear filters</a>
@@ -39,10 +40,20 @@
   <span>Spent<div class="neg">{{ total_out|money }}</div></span>
   <span>Income<div class="pos">{{ total_in|money }}</div></span>
 </div>
+<form id="bulk" method="post" action="{{ url_for('remove_transactions') }}" class="inline bulk">
+  <input type="hidden" name="next" value="{{ next_url }}">
+  {% if filters.removed %}
+    <button name="action" value="restore">Restore selected</button>
+  {% else %}
+    <button name="action" value="remove" onclick="return confirm('Remove the selected transactions from all totals?')">Remove selected</button>
+  {% endif %}
+  <span class="muted">Tip: filter by account to pick out duplicates, then tick the box in the header to select them all.</span>
+</form>
 <table>
-  <tr><th>Date</th><th>Description</th><th class="num">Amount</th><th>Category</th></tr>
+  <tr><th><input type="checkbox" aria-label="Select all" onclick="document.querySelectorAll('input[name=tx]').forEach(b => b.checked = this.checked)"></th><th>Date</th><th>Description</th><th class="num">Amount</th><th>Category</th></tr>
   {% for t in txs %}
   <tr>
+    <td><input type="checkbox" name="tx" value="{{ t.id }}" form="bulk" aria-label="Select"></td>
     <td>{{ t.date }}</td>
     <td>{{ t.description }}<br><span class="muted">{{ t.account }}{% if t.bank_category %} · bank said: {{ t.bank_category }}{% endif %}</span></td>
     <td class="num {{ 'neg' if t.amount_cents < 0 else 'pos' }}">{{ t.amount_cents|money }}</td>
@@ -50,7 +61,7 @@
       <details><summary class="muted">change</summary>{{ category_picker(t, categories, next_url, t.category_id) }}</details></td>
   </tr>
   {% else %}
-  <tr><td colspan="4" class="muted">No transactions match these filters.</td></tr>
+  <tr><td colspan="5" class="muted">No transactions match these filters.</td></tr>
   {% endfor %}
 </table>
 {% endblock %}

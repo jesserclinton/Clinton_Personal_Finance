@@ -123,3 +123,43 @@ def test_filter_transactions(db):
     db.execute("UPDATE transactions SET category_id = NULL WHERE id = ?", (tx["id"],))
     rows = ledger.filter_transactions(db, category_ids=[dining], uncategorised=True)
     assert {r["description"] for r in rows} == {"Coffee House", "Landlord Llc Rent"}
+
+
+def test_removed_transactions_are_hidden_and_stay_removed(db):
+    ledger.import_csv(db, None, "ExportData.csv", fixture_text("truist_sample.csv"))
+    coffee = ledger.filter_transactions(db, search="Coffee")[0]["id"]
+    assert ledger.set_removed(db, [coffee]) == 1
+
+    assert ledger.filter_transactions(db, search="Coffee") == []
+    assert [r["id"] for r in ledger.filter_transactions(db, removed=True)] == [coffee]
+    summary = {r["category"] for r in ledger.month_summary(db, "2026-11")}
+    assert "Restaurants/Dining" not in summary
+
+    # Re-importing the same file doesn't bring it back
+    again = ledger.import_csv(db, None, "ExportData.csv", fixture_text("truist_sample.csv"))
+    assert again["added"] == 0
+    assert ledger.filter_transactions(db, search="Coffee") == []
+
+    ledger.set_removed(db, [coffee], removed=False)
+    assert len(ledger.filter_transactions(db, search="Coffee")) == 1
+
+
+def test_undo_import_allows_reimport(db):
+    first = ledger.import_csv(db, None, "ExportData.csv", fixture_text("truist_sample.csv"))
+    assert ledger.undo_import(db, first["import_id"]) == 5
+    assert ledger.filter_transactions(db) == []
+    again = ledger.import_csv(db, None, "ExportData.csv", fixture_text("truist_sample.csv"))
+    assert again["added"] == 5
+
+
+def test_old_database_gets_removed_column(tmp_path):
+    import re
+    from financeapp.db import SCHEMA, connect, init_db
+    conn = connect(tmp_path / "old.db")
+    # The schema as it was before the removed column
+    old = re.sub(r",\n    removed INTEGER[^\n]*", "", SCHEMA)
+    assert "removed" not in old
+    conn.executescript(old)
+    init_db(conn)
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(transactions)")}
+    assert "removed" in cols

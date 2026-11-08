@@ -54,3 +54,22 @@ def test_category_change_returns_to_filtered_view(client):
     r = client.post("/transactions/1/category",
                     data={"new_category": "Snacks", "next": "/transactions?month=all&category=1"})
     assert r.headers["Location"].endswith("/transactions?month=all&category=1")
+
+
+def test_remove_and_restore_from_transactions_page(client):
+    upload(client, "truist_sample.csv", account_id="auto")
+    r = client.post("/transactions/remove", data={"tx": ["1", "2"], "action": "remove",
+                                                  "next": "/transactions?month=all"}, follow_redirects=True)
+    assert b"Removed 2 transaction(s)" in r.data and b"Grocer Co" not in r.data
+    r = client.get("/transactions?month=all&removed=1")
+    assert b"Grocer Co" in r.data and b"Restore selected" in r.data
+    r = client.post("/transactions/remove", data={"tx": ["1"], "action": "restore",
+                                                  "next": "/transactions?month=all"}, follow_redirects=True)
+    assert b"Restored 1" in r.data and b"Grocer Co" in r.data
+
+
+def test_undo_import_button(client):
+    upload(client, "truist_sample.csv", account_id="auto")
+    r = client.post("/imports/1/undo", follow_redirects=True)
+    assert b"deleted its 5 transaction(s)" in r.data
+    assert b"No transactions match" in client.get("/transactions?month=all").data

@@ -155,20 +155,20 @@ def month_summary(db, month):
                   SUM(CASE WHEN t.amount_cents < 0 THEN -t.amount_cents ELSE 0 END) AS spent_cents,
                   COUNT(*) AS n
            FROM transactions t LEFT JOIN categories c ON c.id = t.category_id
-           WHERE substr(t.date, 1, 7) = ?
+           WHERE substr(t.date, 1, 7) = ? AND t.removed = 0
            GROUP BY t.category_id ORDER BY spent_cents DESC, income_cents DESC""",
         (month,),
     ).fetchall()
 
 
 def filter_transactions(db, month=None, category_ids=(), uncategorised=False,
-                        account_id=None, direction=None, search=None):
+                        account_id=None, direction=None, search=None, removed=False):
     """Transactions matching every filter given. Empty filters match all.
 
     category_ids and uncategorised combine with OR (show these categories,
     plus uncategorised ones if asked). direction is 'out' or 'in'.
     """
-    where, params = [], []
+    where, params = ["t.removed = ?"], [1 if removed else 0]
     if month:
         where.append("substr(t.date, 1, 7) = ?")
         params.append(month)
@@ -197,3 +197,28 @@ def filter_transactions(db, month=None, category_ids=(), uncategorised=False,
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY t.date DESC, t.id DESC"
     return db.execute(sql, params).fetchall()
+
+
+def set_removed(db, tx_ids, removed=True):
+    """Hide transactions from every view and total, or bring them back.
+
+    Removed transactions stay in the database so importing an overlapping
+    file later doesn't add them again.
+    """
+    ids = [int(i) for i in tx_ids]
+    if not ids:
+        return 0
+    n = db.execute(
+        f"UPDATE transactions SET removed = ? WHERE id IN ({','.join('?' * len(ids))})",
+        [1 if removed else 0, *ids],
+    ).rowcount
+    db.commit()
+    return n
+
+
+def undo_import(db, import_id):
+    """Delete everything one import added, so the file can be imported again."""
+    n = db.execute("DELETE FROM transactions WHERE import_id = ?", (import_id,)).rowcount
+    db.execute("DELETE FROM imports WHERE id = ?", (import_id,))
+    db.commit()
+    return n
