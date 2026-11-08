@@ -88,6 +88,41 @@
   form.filters label.row { flex-direction:row; align-items:center; gap:.45rem; }
   form.bulk { margin:.75rem 0; }
 
+  .sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+  table { position:relative; }
+  svg { width:1.05em; height:1.05em; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; vertical-align:-.15em; }
+  .icon-btn { display:inline-flex; align-items:center; gap:.4rem; }
+  .icon-only { padding:.35rem .45rem; line-height:0; }
+  .badge { background:var(--primary); color:var(--primary-fg); border-radius:999px; padding:0 .45em; font-size:.8em; line-height:1.5; }
+  button[disabled] { opacity:.5; cursor:not-allowed; filter:saturate(.6); }
+  [hidden] { display:none !important; }
+  .close-btn, form.filters .close-btn { background:transparent; border:1px solid transparent; color:var(--muted); padding:.3rem; line-height:0; }
+  .close-btn:hover, form.filters .close-btn:hover { background:rgba(255,255,255,.06); color:var(--fg); border-color:var(--line); }
+
+  .toolbar { display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; margin-bottom:1rem; }
+  .toolbar .spacer { flex:1; }
+  .select-hint { display:none; } .select-hint.show { display:inline; }
+
+  form.filters { position:relative; padding-right:3rem; margin-bottom:1rem; }
+  form.filters .close-btn { position:absolute; top:.6rem; right:.6rem; }
+  form.filters[hidden] { display:none; }
+  form.filters .hint { font-size:.85em; }
+  form.filters .actions { display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; }
+
+  #tx-table .sel { display:none; width:2.2rem; }
+  #tx-table.selecting .sel { display:table-cell; }
+  #tx-table .edit-col { width:3rem; text-align:right; }
+
+  dialog { border:1px solid var(--line-strong); border-radius:12px; padding:0; color:var(--fg); width:min(420px, calc(100vw - 32px));
+           background:linear-gradient(160deg, #2a3039 0%, var(--card-2) 100%); box-shadow:0 20px 50px rgba(0,0,0,.55); }
+  dialog::backdrop { background:rgba(8,10,12,.65); backdrop-filter:blur(2px); }
+  dialog form { display:flex; flex-direction:column; gap:.85rem; padding:1rem 1.1rem 1.1rem; }
+  dialog header { display:flex; align-items:center; justify-content:space-between; }
+  dialog h3 { margin:0; }
+  dialog p { margin:0; }
+  dialog label { display:flex; flex-direction:column; gap:.3rem; font-size:.9em; color:var(--muted); }
+  dialog label.row { flex-direction:row; align-items:center; gap:.45rem; }
+  dialog footer { display:flex; justify-content:flex-end; gap:.5rem; margin-top:.25rem; }
   .totals { display:flex; gap:1rem; margin:1rem 0; flex-wrap:wrap; }
   .totals > span { flex:1 1 160px; padding:.75rem 1rem; border-radius:10px; border:1px solid var(--line); color:var(--muted); font-size:.9em;
                    background:linear-gradient(145deg, #262b33 0%, var(--card-2) 100%); }

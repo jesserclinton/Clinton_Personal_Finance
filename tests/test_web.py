@@ -62,7 +62,7 @@ def test_remove_and_restore_from_transactions_page(client):
                                                   "next": "/transactions?month=all"}, follow_redirects=True)
     assert b"Removed 2 transaction(s)" in r.data and b"Grocer Co" not in r.data
     r = client.get("/transactions?month=all&removed=1")
-    assert b"Grocer Co" in r.data and b"Restore selected" in r.data
+    assert b"Grocer Co" in r.data and b"Restore" in r.data
     r = client.post("/transactions/remove", data={"tx": ["1"], "action": "restore",
                                                   "next": "/transactions?month=all"}, follow_redirects=True)
     assert b"Restored 1" in r.data and b"Grocer Co" in r.data
@@ -73,3 +73,12 @@ def test_undo_import_button(client):
     r = client.post("/imports/1/undo", follow_redirects=True)
     assert b"deleted its 5 transaction(s)" in r.data
     assert b"No transactions match" in client.get("/transactions?month=all").data
+
+
+def test_transactions_page_has_edit_dialog_and_hidden_controls(client):
+    upload(client, "truist_sample.csv", account_id="auto")
+    html = client.get("/transactions?month=all").get_data(as_text=True)
+    assert 'id="edit-dialog"' in html and html.count('class="icon-only secondary edit-btn"') == 5
+    assert 'id="filters-panel" method="get" hidden' in html
+    assert 'id="select-confirm"' in html and "hidden disabled" in html
+    assert "<details>" not in html
