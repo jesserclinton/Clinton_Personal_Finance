@@ -163,3 +163,29 @@ def test_old_database_gets_removed_column(tmp_path):
     init_db(conn)
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(transactions)")}
     assert "removed" in cols
+
+
+def test_card_payment_becomes_transfer_and_leaves_totals(db):
+    acct = make_account(db, "USAA Visa", "usaa", "credit")
+    ledger.import_csv(db, acct, "u.csv", fixture_text("usaa_credit_sample.csv"))
+    kind = db.execute("SELECT kind FROM categories WHERE name='Credit Card Payment'").fetchone()[0]
+    assert kind == "transfer"
+    rows = ledger.month_summary(db, "2026-11")
+    counted = [r for r in rows if ledger.counts_in_totals(r)]
+    assert sum(r["income_cents"] for r in counted) == 0          # payment not income
+    assert sum(r["spent_cents"] for r in counted) == 1549         # Netflix only
+
+
+def test_transfer_detection():
+    assert ledger.looks_like_transfer("Credit Card Payment")
+    assert ledger.looks_like_transfer("Transfers")
+    assert not ledger.looks_like_transfer("Groceries")
+
+
+def test_change_category_kind(db):
+    cid = ledger.get_or_create_category(db, "Savings move")
+    ledger.set_category_kind(db, cid, "transfer")
+    assert db.execute("SELECT kind FROM categories WHERE id=?", (cid,)).fetchone()[0] == "transfer"
+    import pytest
+    with pytest.raises(ValueError):
+        ledger.set_category_kind(db, cid, "bogus")

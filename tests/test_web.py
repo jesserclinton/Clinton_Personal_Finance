@@ -95,3 +95,19 @@ def test_active_filter_chips(client):
     assert "Clear all" in html
     plain = client.get("/transactions?month=all").get_data(as_text=True)
     assert "All months" in plain and "Clear all" not in plain
+
+
+def test_transfers_excluded_from_page_totals(client):
+    upload(client, "usaa_credit_sample.csv", account_id="new", account_name="USAA Visa", bank="usaa", kind="credit")
+    html = client.get("/transactions?month=2026-11").get_data(as_text=True)
+    assert "1 transfer(s)" in html and '<span class="tag">transfer</span>' in html
+    assert "$15.49" in html  # spent
+    summary = client.get("/?month=2026-11").get_data(as_text=True)
+    assert "Transfers" in summary and "not counted" in summary
+
+
+def test_categories_page_changes_kind(client):
+    upload(client, "truist_sample.csv", account_id="auto")
+    r = client.post("/categories/1/kind", data={"kind": "transfer"}, follow_redirects=True)
+    assert r.status_code == 200
+    assert client.post("/categories/1/kind", data={"kind": "nope"}).status_code == 400

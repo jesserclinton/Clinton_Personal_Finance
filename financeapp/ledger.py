@@ -1,19 +1,45 @@
 """Business logic: importing into the database and categorising."""
 import hashlib
+import re
 from collections import Counter
 
 from .importers import merchant_key, parse_csv
 
 
+_TRANSFER_RE = re.compile(r"credit card payment|card payment|transfer", re.I)
+
+
+def looks_like_transfer(name):
+    """Bank categories that are money moving between your own accounts."""
+    return bool(_TRANSFER_RE.search(name or ""))
+
+
 def get_or_create_category(db, name, kind=None):
+    """Find a category by name, or create it.
+
+    New categories that look like transfers (e.g. 'Credit Card Payment') are
+    created as kind 'transfer' unless a kind is given explicitly.
+    """
     name = name.strip()
     row = db.execute("SELECT id FROM categories WHERE name = ?", (name,)).fetchone()
     if row:
         return row["id"]
-    cur = db.execute(
-        "INSERT INTO categories (name, kind) VALUES (?, ?)", (name, kind or "expense")
-    )
+    if kind is None:
+        kind = "transfer" if looks_like_transfer(name) else "expense"
+    cur = db.execute("INSERT INTO categories (name, kind) VALUES (?, ?)", (name, kind))
     return cur.lastrowid
+
+
+def set_category_kind(db, category_id, kind):
+    if kind not in ("expense", "income", "transfer"):
+        raise ValueError("Unknown kind")
+    db.execute("UPDATE categories SET kind = ? WHERE id = ?", (kind, category_id))
+    db.commit()
+
+
+def counts_in_totals(row):
+    """False for transfers, which are left out of spending and income."""
+    return row["category_kind"] != "transfer"
 
 
 def _fingerprint(account_id, row, occurrence):
@@ -35,7 +61,10 @@ def categorise(db, mkey, bank_category, amount_cents):
     if rule:
         return rule["category_id"], "rule"
     if bank_category:
-        kind = "income" if amount_cents > 0 else "expense"
+        if looks_like_transfer(bank_category):
+            kind = "transfer"
+        else:
+            kind = "income" if amount_cents > 0 else "expense"
         return get_or_create_category(db, bank_category, kind), "bank"
     return None, None
 
@@ -151,6 +180,7 @@ def month_summary(db, month):
     """Income and spending per category for a YYYY-MM month."""
     return db.execute(
         """SELECT COALESCE(c.name, 'Uncategorized') AS category, t.category_id,
+                  COALESCE(c.kind, 'expense') AS category_kind,
                   SUM(CASE WHEN t.amount_cents > 0 THEN t.amount_cents ELSE 0 END) AS income_cents,
                   SUM(CASE WHEN t.amount_cents < 0 THEN -t.amount_cents ELSE 0 END) AS spent_cents,
                   COUNT(*) AS n
@@ -190,7 +220,8 @@ def filter_transactions(db, month=None, category_ids=(), uncategorised=False,
     if search:
         where.append("(t.description LIKE ? OR t.original_description LIKE ?)")
         params.extend([f"%{search}%"] * 2)
-    sql = """SELECT t.*, a.name AS account, c.name AS category FROM transactions t
+    sql = """SELECT t.*, a.name AS account, c.name AS category,
+                    COALESCE(c.kind, 'expense') AS category_kind FROM transactions t
              JOIN accounts a ON a.id = t.account_id
              LEFT JOIN categories c ON c.id = t.category_id"""
     if where:

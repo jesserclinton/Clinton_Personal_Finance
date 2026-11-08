@@ -15,4 +15,14 @@
   <tr><td colspan="4" class="muted">Nothing for this month yet. <a href="{{ url_for('import_view') }}">Import a statement</a>.</td></tr>
   {% endfor %}
 </table>
+{% if transfers %}
+<h3>Transfers <span class="muted">(not counted in income or spending)</span></h3>
+<table>
+  <tr><th>Category</th><th class="num">In</th><th class="num">Out</th><th class="num">Transactions</th></tr>
+  {% for r in transfers %}
+  <tr class="transfer"><td><a href="{{ url_for('transactions', month=month, category=r.category_id) }}">{{ r.category }}</a></td><td class="num">{{ r.income_cents|money }}</td><td class="num">{{ r.spent_cents|money }}</td><td class="num">{{ r.n }}</td></tr>
+  {% endfor %}
+</table>
+<p class="muted">Change which categories count as transfers on the <a href="{{ url_for('categories_view') }}">Categories</a> page.</p>
+{% endif %}
 {% endblock %}
