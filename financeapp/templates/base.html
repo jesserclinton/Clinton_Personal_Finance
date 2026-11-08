@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Budget{% endblock %}</title>
+<style>
+  :root { --bg:#fafafa; --fg:#1f2328; --muted:#656d76; --line:#d0d7de; --accent:#0969da; --ok:#1a7f37; --err:#cf222e; --card:#fff; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0d1117; --fg:#e6edf3; --muted:#8d96a0; --line:#30363d; --accent:#4493f8; --ok:#3fb950; --err:#f85149; --card:#161b22; } }
+  body { font: 15px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--fg); margin:0; }
+  nav { display:flex; gap:1rem; padding:.75rem 1rem; border-bottom:1px solid var(--line); background:var(--card); flex-wrap:wrap; }
+  nav a { color:var(--fg); text-decoration:none; font-weight:500; }
+  nav a.badge::after { content: attr(data-n); background:var(--err); color:#fff; border-radius:9px; padding:0 .4em; margin-left:.3em; font-size:.8em; }
+  main { max-width:1000px; margin:0 auto; padding:1rem; }
+  table { width:100%; border-collapse:collapse; background:var(--card); }
+  th, td { text-align:left; padding:.45rem .5rem; border-bottom:1px solid var(--line); vertical-align:middle; }
+  td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .neg { color:var(--err); } .pos { color:var(--ok); }
+  .muted { color:var(--muted); font-size:.9em; }
+  .flash { padding:.5rem .75rem; border-radius:6px; margin-bottom:.75rem; border:1px solid var(--line); }
+  .flash.ok { border-color:var(--ok); } .flash.error { border-color:var(--err); }
+  form.inline { display:flex; gap:.35rem; align-items:center; flex-wrap:wrap; margin:0; }
+  input, select, button { font:inherit; padding:.25rem .4rem; }
+  button { cursor:pointer; }
+  .totals { display:flex; gap:2rem; margin:1rem 0; }
+  .totals div { font-size:1.3em; font-weight:600; }
+</style>
+</head>
+<body>
+<nav>
+  <a href="{{ url_for('index') }}">Summary</a>
+  <a href="{{ url_for('transactions') }}">Transactions</a>
+  <a href="{{ url_for('review') }}">Review</a>
+  <a href="{{ url_for('import_view') }}">Import</a>
+  <a href="{{ url_for('categories_view') }}">Categories</a>
+</nav>
+<main>
+  {% for cat, msg in get_flashed_messages(with_categories=true) %}
+    <div class="flash {{ cat }}">{{ msg }}</div>
+  {% endfor %}
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>

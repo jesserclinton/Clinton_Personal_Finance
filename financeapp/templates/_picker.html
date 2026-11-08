@@ -1,0 +1,14 @@
+{% macro category_picker(tx, categories, next_url, current=None) %}
+<form class="inline" method="post" action="{{ url_for('change_category', tx_id=tx.id) }}">
+  <input type="hidden" name="next" value="{{ next_url }}">
+  <select name="category_id" aria-label="Category">
+    <option value="">Choose…</option>
+    {% for c in categories %}
+      <option value="{{ c.id }}" {% if c.id == current %}selected{% endif %}>{{ c.name }}</option>
+    {% endfor %}
+  </select>
+  <input name="new_category" placeholder="or new category" size="14" aria-label="New category">
+  <label class="muted"><input type="checkbox" name="remember" checked> remember for this merchant</label>
+  <button>Save</button>
+</form>
+{% endmacro %}

@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Categories</h2>
+<form class="inline" method="post">
+  <input name="name" placeholder="New category" required>
+  <select name="kind"><option value="expense">Expense</option><option value="income">Income</option><option value="transfer">Transfer</option></select>
+  <button>Add</button>
+</form>
+<table>
+  <tr><th>Name</th><th>Kind</th><th class="num">Transactions</th></tr>
+  {% for c in rows %}<tr><td>{{ c.name }}</td><td>{{ c.kind }}</td><td class="num">{{ c.n }}</td></tr>
+  {% else %}<tr><td colspan="3" class="muted">None yet. Bank categories are added automatically on import.</td></tr>{% endfor %}
+</table>
+<h3>Remembered merchants</h3>
+<table>
+  <tr><th>Merchant</th><th>Category</th><th></th></tr>
+  {% for r in rules %}<tr><td>{{ r.merchant_key }}</td><td>{{ r.category }}</td>
+    <td><form method="post" action="{{ url_for('delete_rule', rule_id=r.id) }}"><button>Forget</button></form></td></tr>
+  {% else %}<tr><td colspan="3" class="muted">None yet.</td></tr>{% endfor %}
+</table>
+{% endblock %}

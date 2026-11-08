@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+# Personal data never goes in the repo
+instance/
+*.db
+*.sqlite
+*.sqlite3
+data/
+*.csv
+!tests/fixtures/*.csv

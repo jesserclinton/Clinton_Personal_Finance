@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% from "_picker.html" import category_picker %}
+{% block content %}
+<h2>Needs a category</h2>
+<p class="muted">The bank didn't say what these were. Pick a category or type a new one. "Remember" sorts this merchant automatically from now on.</p>
+<table>
+  <tr><th>Date</th><th>Description</th><th class="num">Amount</th><th>Category</th></tr>
+  {% for t in txs %}
+  <tr>
+    <td>{{ t.date }}</td>
+    <td>{{ t.description }}<br><span class="muted">{{ t.account }}</span></td>
+    <td class="num {{ 'neg' if t.amount_cents < 0 else 'pos' }}">{{ t.amount_cents|money }}</td>
+    <td>{{ category_picker(t, categories, url_for('review')) }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4" class="muted">All caught up.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

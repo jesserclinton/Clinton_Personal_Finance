@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<form class="inline" method="get"><label>Month <input type="month" name="month" value="{{ month }}"></label><button>Show</button></form>
+{% if to_review %}<p><a href="{{ url_for('review') }}">{{ to_review }} transaction(s) need a category.</a></p>{% endif %}
+<div class="totals">
+  <span>Income<div class="pos">{{ income|money }}</div></span>
+  <span>Spent<div class="neg">{{ spent|money }}</div></span>
+  <span>Net<div>{{ (income - spent)|money }}</div></span>
+</div>
+<table>
+  <tr><th>Category</th><th class="num">Income</th><th class="num">Spent</th><th class="num">Transactions</th></tr>
+  {% for r in rows %}
+  <tr><td>{{ r.category }}</td><td class="num">{{ r.income_cents|money }}</td><td class="num">{{ r.spent_cents|money }}</td><td class="num">{{ r.n }}</td></tr>
+  {% else %}
+  <tr><td colspan="4" class="muted">Nothing for this month yet. <a href="{{ url_for('import_view') }}">Import a statement</a>.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}
