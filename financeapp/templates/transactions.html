@@ -1,13 +1,10 @@
 {% extends "base.html" %}
-{% set n_active = (picked|length > 0)|int + (filters.account_id is not none)|int + (filters.direction is not none)|int
-                  + (filters.search is not none)|int + filters.removed|int %}
 {% block content %}
 <div class="toolbar">
   <button type="button" class="secondary icon-btn" id="filters-toggle" aria-expanded="false" aria-controls="filters-panel">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18l-7 8.5V19l-4 2v-7.5z"/></svg>
-    Filters{% if n_active %} <span class="badge">{{ n_active }}</span>{% endif %}
+    Filters
   </button>
-  <span class="muted scope">{{ month or 'All months' }}{% if filters.removed %} · removed transactions{% endif %}</span>
   <span class="spacer"></span>
   <span class="select-hint muted" id="select-hint">Select the transactions to {{ 'restore' if filters.removed else 'remove' }}</span>
   <button type="button" class="secondary" id="select-cancel" hidden>Cancel</button>
@@ -18,6 +15,16 @@
   <button type="submit" form="bulk" id="select-confirm" name="action" value="{{ 'restore' if filters.removed else 'remove' }}" hidden disabled>
     Confirm <span id="select-count"></span>
   </button>
+</div>
+<div class="chips" aria-label="Active filters">
+    {% if not month %}<span class="chip static">All months</span>{% endif %}
+    {% for kind, label, url in chips %}
+      <a class="chip" href="{{ url }}" title="Remove this filter" aria-label="Remove filter {{ kind }}: {{ label }}">
+        <span class="chip-kind">{{ kind }}</span> {{ label }}
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </a>
+    {% endfor %}
+    {% if chips|length > 1 %}<a class="chip-clear" href="{{ url_for('transactions', month='all') }}">Clear all</a>{% endif %}
 </div>
 
 <form class="filters" id="filters-panel" method="get" hidden>

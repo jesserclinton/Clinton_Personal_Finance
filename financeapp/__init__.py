@@ -144,7 +144,50 @@ def create_app(test_config=None):
             total_in=sum(t["amount_cents"] for t in txs if t["amount_cents"] > 0),
             total_out=sum(-t["amount_cents"] for t in txs if t["amount_cents"] < 0),
             next_url=request.full_path,
+            chips=_filter_chips(month, picked, filters, categories(), accounts),
         )
+
+    def _filter_chips(month, picked, filters, cats, accounts):
+        """(label, url without that filter) for each active filter."""
+        base = {
+            "month": month or "all",
+            "category": list(picked),
+            "account": filters["account_id"],
+            "direction": filters["direction"],
+            "q": filters["search"],
+            "removed": "1" if filters["removed"] else None,
+        }
+
+        def without(key, value=None):
+            params = {**base, "category": list(base["category"])}
+            if key == "category":
+                params["category"].remove(value)
+            else:
+                params[key] = "all" if key == "month" else None
+            return url_for("transactions", **{k: v for k, v in params.items() if v})
+
+        names = {str(c["id"]): c["name"] for c in cats}
+        names["none"] = "Uncategorized"
+        acct_names = {a["id"]: a["name"] for a in accounts}
+        chips = []
+        if month:
+            try:
+                label = date.fromisoformat(month + "-01").strftime("%B %Y")
+            except ValueError:
+                label = month
+            chips.append(("Month", label, without("month")))
+        for c in picked:
+            chips.append(("Category", names.get(c, c), without("category", c)))
+        if filters["account_id"]:
+            chips.append(("Account", acct_names.get(filters["account_id"], "?"), without("account")))
+        if filters["direction"]:
+            chips.append(("Type", "Spending only" if filters["direction"] == "out" else "Income only",
+                          without("direction")))
+        if filters["search"]:
+            chips.append(("Search", f"\u201c{filters['search']}\u201d", without("q")))
+        if filters["removed"]:
+            chips.append(("Showing", "Removed transactions", without("removed")))
+        return chips
 
     @app.post("/transactions/<int:tx_id>/category")
     def change_category(tx_id):
