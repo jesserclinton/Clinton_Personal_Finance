@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% from "_picker.html" import category_picker %}
+{% block content %}
+<form class="inline" method="get"><label>Month <input type="month" name="month" value="{{ month }}"></label><button>Show</button></form>
+<p class="muted">Think the bank got a category wrong? Change it here. Your choice always wins over the bank's.</p>
+<table>
+  <tr><th>Date</th><th>Description</th><th class="num">Amount</th><th>Category</th></tr>
+  {% for t in txs %}
+  <tr>
+    <td>{{ t.date }}</td>
+    <td>{{ t.description }}<br><span class="muted">{{ t.account }}{% if t.bank_category %} · bank said: {{ t.bank_category }}{% endif %}</span></td>
+    <td class="num {{ 'neg' if t.amount_cents < 0 else 'pos' }}">{{ t.amount_cents|money }}</td>
+    <td><strong>{{ t.category or 'Uncategorized' }}</strong> <span class="muted">{{ t.category_source or '' }}</span>
+      <details><summary class="muted">change</summary>{{ category_picker(t, categories, url_for('transactions', month=month), t.category_id) }}</details></td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4" class="muted">No transactions this month.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}
