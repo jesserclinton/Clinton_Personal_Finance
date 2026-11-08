@@ -37,3 +37,20 @@ def test_truist_export_upload_uses_accounts_in_file(client):
     assert b"Imported 5 new transactions" in r.data
     r = client.get("/transactions?month=2026-11")
     assert b"Groceries" in r.data and b"Paychecks/Salary" in r.data
+
+
+def test_transactions_filter_by_category(client):
+    upload(client, "truist_sample.csv", account_id="auto")
+    r = client.get("/transactions?month=all&category=1")  # Groceries is created first
+    assert b"Grocer Co" in r.data and b"Coffee House" not in r.data
+    r = client.get("/transactions?month=2026-11&q=coffee")
+    assert b"Coffee House" in r.data and b"Grocer Co" not in r.data
+    r = client.get("/transactions?month=all&category=none")
+    assert b"No transactions match" in r.data
+
+
+def test_category_change_returns_to_filtered_view(client):
+    upload(client, "truist_sample.csv", account_id="auto")
+    r = client.post("/transactions/1/category",
+                    data={"new_category": "Snacks", "next": "/transactions?month=all&category=1"})
+    assert r.headers["Location"].endswith("/transactions?month=all&category=1")

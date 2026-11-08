@@ -102,3 +102,24 @@ def test_month_summary(db):
     rows = {r["category"]: r for r in ledger.month_summary(db, "2026-11")}
     assert rows["Groceries"]["spent_cents"] == 8214
     assert rows["Paycheck"]["income_cents"] == 150000
+
+
+def test_filter_transactions(db):
+    ledger.import_csv(db, None, "ExportData.csv", fixture_text("truist_sample.csv"))
+    groceries = db.execute("SELECT id FROM categories WHERE name='Groceries'").fetchone()[0]
+    dining = db.execute("SELECT id FROM categories WHERE name='Restaurants/Dining'").fetchone()[0]
+
+    assert len(ledger.filter_transactions(db)) == 5
+    assert len(ledger.filter_transactions(db, category_ids=[groceries])) == 2
+    assert len(ledger.filter_transactions(db, category_ids=[groceries, dining])) == 3
+    assert len(ledger.filter_transactions(db, month="2026-10")) == 0
+    assert len(ledger.filter_transactions(db, direction="in")) == 1
+    assert len(ledger.filter_transactions(db, search="coffee")) == 1
+    usaa = db.execute("SELECT id FROM accounts WHERE bank='usaa'").fetchone()[0]
+    assert len(ledger.filter_transactions(db, account_id=usaa)) == 1
+
+    # Uncategorised can be combined with categories
+    tx = ledger.filter_transactions(db, search="Landlord")[0]
+    db.execute("UPDATE transactions SET category_id = NULL WHERE id = ?", (tx["id"],))
+    rows = ledger.filter_transactions(db, category_ids=[dining], uncategorised=True)
+    assert {r["description"] for r in rows} == {"Coffee House", "Landlord Llc Rent"}

@@ -1,8 +1,44 @@
 {% extends "base.html" %}
 {% from "_picker.html" import category_picker %}
 {% block content %}
-<form class="inline" method="get"><label>Month <input type="month" name="month" value="{{ month }}"></label><button>Show</button></form>
-<p class="muted">Think the bank got a category wrong? Change it here. Your choice always wins over the bank's.</p>
+<form class="filters" method="get">
+  <label>Month <input type="month" name="month" value="{{ month }}"></label>
+  <label>Category
+    <select name="category" multiple size="6">
+      <option value="none" {% if 'none' in picked %}selected{% endif %}>Uncategorized</option>
+      {% for c in categories %}
+        <option value="{{ c.id }}" {% if c.id|string in picked %}selected{% endif %}>{{ c.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <div class="stack">
+    <label>Account
+      <select name="account">
+        <option value="">All accounts</option>
+        {% for a in accounts %}<option value="{{ a.id }}" {% if filters.account_id == a.id %}selected{% endif %}>{{ a.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Type
+      <select name="direction">
+        <option value="">Spending and income</option>
+        <option value="out" {% if filters.direction == 'out' %}selected{% endif %}>Spending only</option>
+        <option value="in" {% if filters.direction == 'in' %}selected{% endif %}>Income only</option>
+      </select>
+    </label>
+    <label>Search <input type="search" name="q" value="{{ filters.search or '' }}" placeholder="Walmart"></label>
+    <div>
+      <button>Filter</button>
+      <a href="{{ url_for('transactions', month=month or 'all') }}">Clear filters</a>
+      · <a href="{{ url_for('transactions', month='all', category=picked, account=filters.account_id, direction=filters.direction, q=filters.search) }}">All months</a>
+    </div>
+  </div>
+</form>
+<p class="muted">Hold Ctrl (Cmd on Mac) to pick more than one category. Think the bank got a category wrong? Change it below; your choice always wins over the bank's.</p>
+<div class="totals">
+  <span>Transactions<div>{{ txs|length }}</div></span>
+  <span>Spent<div class="neg">{{ total_out|money }}</div></span>
+  <span>Income<div class="pos">{{ total_in|money }}</div></span>
+</div>
 <table>
   <tr><th>Date</th><th>Description</th><th class="num">Amount</th><th>Category</th></tr>
   {% for t in txs %}
@@ -10,11 +46,11 @@
     <td>{{ t.date }}</td>
     <td>{{ t.description }}<br><span class="muted">{{ t.account }}{% if t.bank_category %} · bank said: {{ t.bank_category }}{% endif %}</span></td>
     <td class="num {{ 'neg' if t.amount_cents < 0 else 'pos' }}">{{ t.amount_cents|money }}</td>
-    <td><strong>{{ t.category or 'Uncategorized' }}</strong> <span class="muted">{{ t.category_source or '' }}</span>
-      <details><summary class="muted">change</summary>{{ category_picker(t, categories, url_for('transactions', month=month), t.category_id) }}</details></td>
+    <td><a href="{{ url_for('transactions', month=month or 'all', category=t.category_id or 'none') }}"><strong>{{ t.category or 'Uncategorized' }}</strong></a> <span class="muted">{{ t.category_source or '' }}</span>
+      <details><summary class="muted">change</summary>{{ category_picker(t, categories, next_url, t.category_id) }}</details></td>
   </tr>
   {% else %}
-  <tr><td colspan="4" class="muted">No transactions this month.</td></tr>
+  <tr><td colspan="4" class="muted">No transactions match these filters.</td></tr>
   {% endfor %}
 </table>
 {% endblock %}

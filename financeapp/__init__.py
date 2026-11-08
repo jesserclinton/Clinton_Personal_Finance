@@ -115,16 +115,34 @@ def create_app(test_config=None):
 
     @app.route("/transactions")
     def transactions():
-        month = request.args.get("month") or date.today().strftime("%Y-%m")
-        txs = dbmod.get_db().execute(
-            """SELECT t.*, a.name AS account, c.name AS category FROM transactions t
-               JOIN accounts a ON a.id = t.account_id
-               LEFT JOIN categories c ON c.id = t.category_id
-               WHERE substr(t.date, 1, 7) = ? ORDER BY t.date DESC, t.id DESC""",
-            (month,),
-        ).fetchall()
+        args = request.args
+        # A month is shown by default; "all" (or a blank month) means every month.
+        month = args.get("month", date.today().strftime("%Y-%m"))
+        month = "" if month == "all" else month
+        picked = args.getlist("category")
+        cat_ids = [int(c) for c in picked if c.isdigit()]
+        filters = dict(
+            month=month or None,
+            category_ids=cat_ids,
+            uncategorised="none" in picked,
+            account_id=args.get("account", type=int),
+            direction=args.get("direction") or None,
+            search=(args.get("q") or "").strip() or None,
+        )
+        db = dbmod.get_db()
+        txs = ledger.filter_transactions(db, **filters)
+        accounts = db.execute("SELECT * FROM accounts ORDER BY name").fetchall()
         return render_template(
-            "transactions.html", txs=txs, month=month, categories=categories()
+            "transactions.html",
+            txs=txs,
+            month=month,
+            picked=picked,
+            filters=filters,
+            categories=categories(),
+            accounts=accounts,
+            total_in=sum(t["amount_cents"] for t in txs if t["amount_cents"] > 0),
+            total_out=sum(-t["amount_cents"] for t in txs if t["amount_cents"] < 0),
+            next_url=request.full_path,
         )
 
     @app.post("/transactions/<int:tx_id>/category")

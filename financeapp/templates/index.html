@@ -10,7 +10,7 @@
 <table>
   <tr><th>Category</th><th class="num">Income</th><th class="num">Spent</th><th class="num">Transactions</th></tr>
   {% for r in rows %}
-  <tr><td>{{ r.category }}</td><td class="num">{{ r.income_cents|money }}</td><td class="num">{{ r.spent_cents|money }}</td><td class="num">{{ r.n }}</td></tr>
+  <tr><td><a href="{{ url_for('transactions', month=month, category=r.category_id or 'none') }}">{{ r.category }}</a></td><td class="num">{{ r.income_cents|money }}</td><td class="num">{{ r.spent_cents|money }}</td><td class="num">{{ r.n }}</td></tr>
   {% else %}
   <tr><td colspan="4" class="muted">Nothing for this month yet. <a href="{{ url_for('import_view') }}">Import a statement</a>.</td></tr>
   {% endfor %}
