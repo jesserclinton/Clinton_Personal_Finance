@@ -22,6 +22,7 @@ def create_app(test_config=None):
 
     with app.app_context():
         dbmod.init_db(dbmod.get_db())
+        ledger.upgrade(dbmod.get_db())
     app.teardown_appcontext(dbmod.close_db)
 
     @app.template_filter("money")
