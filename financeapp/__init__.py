@@ -2,8 +2,9 @@
 import os
 from datetime import date
 
-from flask import Flask, abort, flash, redirect, render_template, request, url_for
+from flask import Flask, Response, abort, flash, redirect, render_template, request, url_for
 
+from . import budgets as budgetmod
 from . import db as dbmod
 from . import ledger
 from .importers import ImportError_
@@ -24,6 +25,8 @@ def create_app(test_config=None):
         dbmod.init_db(dbmod.get_db())
         ledger.upgrade(dbmod.get_db())
     app.teardown_appcontext(dbmod.close_db)
+
+    app.add_template_filter(budgetmod.over_budget_style, "over_style")
 
     @app.template_filter("money")
     def money(cents):
@@ -62,6 +65,99 @@ def create_app(test_config=None):
             income=sum(r["income_cents"] for r in rows),
             spent=sum(r["spent_cents"] for r in rows),
             to_review=to_review,
+        )
+
+    def _month_arg():
+        month = request.values.get("month") or date.today().strftime("%Y-%m")
+        try:
+            date.fromisoformat(month + "-01")
+        except ValueError:
+            abort(400, "Month should look like 2026-11")
+        return month
+
+    @app.route("/budgets", methods=["GET", "POST"])
+    def budgets_view():
+        db = dbmod.get_db()
+        month = _month_arg()
+        if request.method == "POST":
+            def cents(value):
+                value = (value or "").strip().replace("$", "").replace(",", "")
+                if not value:
+                    return None
+                try:
+                    return max(round(float(value) * 100), 0)
+                except ValueError:
+                    raise ValueError(f"\"{value}\" isn't an amount") from None
+
+            amounts, actuals = {}, {}
+            try:
+                for key, value in request.form.items():
+                    if key.startswith("budget-"):
+                        amounts[int(key.removeprefix("budget-"))] = cents(value) or 0
+                    elif key.startswith("actual-"):
+                        actuals[int(key.removeprefix("actual-"))] = cents(value)
+                new_income = request.form.get("new_income", "").strip()
+                if new_income:
+                    cid = ledger.get_or_create_category(db, new_income, "income")
+                    ledger.set_category_kind(db, cid, "income")
+                    amounts[cid] = cents(request.form.get("new_income_expected")) or 0
+                    actual = cents(request.form.get("new_income_actual"))
+                    if actual is not None:
+                        actuals[cid] = actual
+            except ValueError as exc:
+                flash(f"{exc}.", "error")
+                return redirect(url_for("budgets_view", month=month))
+            budgetmod.set_income_actuals(db, month, actuals)
+            start = request.form.get("start_month") if request.form.get("scope") == "from" else None
+            if start:
+                try:
+                    date.fromisoformat(start + "-01")
+                except ValueError:
+                    flash("Pick a valid month to apply the budgets from.", "error")
+                    return redirect(url_for("budgets_view", month=month))
+                if start > month:
+                    flash("The start month must be on or before the month you're viewing.", "error")
+                    return redirect(url_for("budgets_view", month=month))
+            n = budgetmod.set_budgets(db, month, amounts, start_month=start)
+            if start and start < month:
+                flash(f"Applied {n} budget(s) from {budgetmod.month_label(start)} through "
+                      f"{budgetmod.month_label(month)} and onward.", "ok")
+            else:
+                flash(f"Saved income and budgets for {budgetmod.month_label(month)} onward "
+                      f"({n} change(s)).", "ok")
+            return redirect(url_for("budgets_view", month=month))
+        status = budgetmod.budget_status(db, month)
+        income = budgetmod.income_status(db, month)
+        savings = budgetmod.savings_summary(db, month, income, status)
+        months, history = budgetmod.heatmap_history(db, month)
+        budgeted = [r for r in status if r["budget_cents"]]
+        return render_template(
+            "budgets.html",
+            month=month,
+            month_name=budgetmod.month_label(month),
+            prev_month=budgetmod.month_add(month, -1),
+            next_month=budgetmod.month_add(month, 1),
+            status=status,
+            income=income,
+            savings=savings,
+            budgeted=budgeted,
+            total_budget=sum(r["budget_cents"] for r in budgeted),
+            total_budgeted_spent=sum(r["spent_cents"] for r in budgeted),
+            months=months,
+            month_short=lambda m: budgetmod.month_label(m, "%b %Y"),
+            history=history,
+            levels=budgetmod.LEVELS,
+            first_month=budgetmod.first_month_with_data(db) or month,
+        )
+
+    @app.route("/export.csv")
+    def export_csv():
+        month = _month_arg()
+        body = budgetmod.export_month_csv(dbmod.get_db(), month)
+        return Response(
+            body,
+            mimetype="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=budget-{month}.csv"},
         )
 
     @app.route("/import", methods=["GET", "POST"])

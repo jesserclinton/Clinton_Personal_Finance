@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
-<form class="inline" method="get"><label>Month <input type="month" name="month" value="{{ month }}"></label><button>Show</button></form>
+<div class="month-nav">
+  <form class="inline" method="get"><label>Month <input type="month" name="month" value="{{ month }}"></label><button>Show</button></form>
+  <span class="spacer"></span>
+  <a class="btn" href="{{ url_for('budgets_view', month=month) }}">Budgets</a>
+  <a class="btn primary" href="{{ url_for('export_csv', month=month) }}">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0l-4-4m4 4l4-4M5 19h14"/></svg> Export CSV</a>
+</div>
 {% if to_review %}<p><a href="{{ url_for('review') }}">{{ to_review }} transaction(s) need a category.</a></p>{% endif %}
 <div class="totals">
   <span>Income<div class="pos">{{ income|money }}</div></span>

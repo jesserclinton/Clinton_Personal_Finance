@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="month-nav">
+  <h2>{{ month_name }}</h2>
+  <a class="btn" href="{{ url_for('budgets_view', month=prev_month) }}" aria-label="Previous month">‹ Prev</a>
+  <a class="btn" href="{{ url_for('budgets_view', month=next_month) }}" aria-label="Next month">Next ›</a>
+  <form class="inline" method="get"><input type="month" name="month" value="{{ month }}" aria-label="Month"><button>Go</button></form>
+  <span class="spacer"></span>
+  <a class="btn primary" href="{{ url_for('export_csv', month=month) }}">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0l-4-4m4 4l4-4M5 19h14"/></svg> Export CSV</a>
+</div>
+
+<div class="legend" aria-label="Colour key">
+  Share of budget used:
+  {% for floor, name, label in levels %}<span class="swatch heat-{{ name }}">{{ label }}</span>{% endfor %}
+  <span class="swatch over-scale">over 100%: darker the further over</span>
+  <span class="swatch heat-none">No budget</span>
+</div>
+
+<h3>Left to save or invest</h3>
+<table class="plan">
+  <tr><th></th><th class="num">Planned</th><th class="num">Actual so far</th></tr>
+  <tr><td>Income</td><td class="num">{{ savings.expected_income|money }}</td><td class="num pos">{{ savings.actual_income|money }}</td></tr>
+  <tr><td>Spending</td><td class="num">{{ savings.budgeted_spending|money }}</td><td class="num neg">{{ savings.actual_spending|money }}</td></tr>
+  <tr class="total"><td>Left over</td>
+    <td class="num"><span class="leftover {{ 'pos' if savings.planned_left >= 0 else 'neg' }}">{{ savings.planned_left|money }}</span></td>
+    <td class="num"><span class="leftover {{ 'pos' if savings.actual_left >= 0 else 'neg' }}">{{ savings.actual_left|money }}</span></td></tr>
+</table>
+<p class="muted">Planned = expected income minus budgeted spending. Actual = income received minus everything spent this month (transfers aren't counted).</p>
+
+{% if budgeted %}
+<h3>Spending against budget</h3>
+<div class="tiles">
+  {% for r in budgeted %}
+  <a class="tile heat-{{ r.level }}" style="{{ r.pct|over_style }}" href="{{ url_for('transactions', month=month, category=r.category_id) }}"
+     title="See {{ r.category }} transactions">
+    <div class="name">{{ r.category }}</div>
+    <div class="pct">{{ (r.pct * 100)|round|int }}%</div>
+    <div class="sub">{{ r.spent_cents|money }} of {{ r.budget_cents|money }}
+      · {% if r.remaining_cents >= 0 %}{{ r.remaining_cents|money }} left{% else %}{{ (-r.remaining_cents)|money }} over{% endif %}</div>
+    <div class="bar"><i style="width: {{ [r.pct * 100, 100]|min }}%"></i></div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<p class="muted">No budgets yet. Enter monthly amounts below; categories without one aren't coloured.</p>
+{% endif %}
+
+<form method="post">
+  <input type="hidden" name="month" value="{{ month }}">
+  <h3>Income</h3>
+  <p class="muted">Expected income carries forward like a budget. Actual comes from your imports; type an amount to replace it for this month (e.g. pay deposited somewhere you don't import), or clear it to go back to the imported amount.</p>
+  <table>
+    <tr><th>Income category</th><th class="num">Expected</th><th class="num">Actual</th><th class="num">Difference</th></tr>
+    {% for r in income %}
+    <tr>
+      <td>{% if r.category_id %}<a href="{{ url_for('transactions', month=month, category=r.category_id) }}">{{ r.category }}</a>{% else %}{{ r.category }}{% endif %}</td>
+      <td class="num">{% if r.category_id %}<input class="money" name="budget-{{ r.category_id }}" inputmode="decimal" placeholder="—"
+             value="{{ '%.2f'|format(r.expected_cents / 100) if r.expected_cents else '' }}" aria-label="Expected {{ r.category }} income">{% endif %}</td>
+      <td class="num">{% if r.category_id %}<input class="money" name="actual-{{ r.category_id }}" inputmode="decimal"
+             placeholder="{{ '%.2f'|format(r.imported_cents / 100) }}"
+             value="{{ '%.2f'|format(r.entered_cents / 100) if r.entered_cents is not none else '' }}" aria-label="Actual {{ r.category }} income">
+             {% if r.entered_cents is not none %}<div class="muted small">entered · imported {{ r.imported_cents|money }}</div>{% endif %}
+           {% else %}{{ r.actual_cents|money }}{% endif %}</td>
+      <td class="num {{ 'pos' if r.difference_cents >= 0 else 'neg' }}">{{ r.difference_cents|money }}</td>
+    </tr>
+    {% endfor %}
+    <tr class="add-row">
+      <td><input name="new_income" placeholder="Add income, e.g. Paycheck" aria-label="New income category"></td>
+      <td class="num"><input class="money" name="new_income_expected" inputmode="decimal" placeholder="Expected" aria-label="Expected for new income"></td>
+      <td class="num"><input class="money" name="new_income_actual" inputmode="decimal" placeholder="Actual" aria-label="Actual for new income"></td>
+      <td></td>
+    </tr>
+  </table>
+
+  <h3>Spending budgets</h3>
+  <p class="muted">A budget carries forward to later months until you change it. Leave a box empty for no budget.</p>
+  <table>
+    <tr><th>Category</th><th class="num">Monthly budget</th><th class="num">Spent</th><th class="num">Left</th><th class="num">Used</th></tr>
+    {% for r in status %}
+    <tr>
+      <td><a href="{{ url_for('transactions', month=month, category=r.category_id) }}">{{ r.category }}</a></td>
+      <td class="num"><input class="money" name="budget-{{ r.category_id }}" inputmode="decimal" placeholder="—"
+             value="{{ '%.2f'|format(r.budget_cents / 100) if r.budget_cents else '' }}" aria-label="Budget for {{ r.category }}"></td>
+      <td class="num">{{ r.spent_cents|money }}</td>
+      <td class="num {% if r.remaining_cents is not none and r.remaining_cents < 0 %}neg{% endif %}">{{ r.remaining_cents|money if r.remaining_cents is not none else '' }}</td>
+      <td class="num">{% if r.level %}<span class="pill heat-{{ r.level }}" style="{{ r.pct|over_style }}">{{ (r.pct * 100)|round|int }}%</span>{% endif %}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="muted">No expense categories yet. <a href="{{ url_for('import_view') }}">Import a statement</a> first.</td></tr>
+    {% endfor %}
+  </table>
+  <fieldset class="scope">
+    <legend>Apply expected income and budgets to</legend>
+    <label><input type="radio" name="scope" value="forward" checked> {{ month_name }} and later months</label>
+    <label><input type="radio" name="scope" value="from" id="scope-from">
+      Every month starting from
+      <input type="month" name="start_month" value="{{ first_month if first_month < month else month }}" max="{{ month }}"
+             aria-label="Start month" onfocus="document.getElementById('scope-from').checked = true">
+      through {{ month_name }} and later</label>
+  </fieldset>
+  <p><button>Save income and budgets</button></p>
+</form>
+
+{% if history %}
+<h3>Last 6 months</h3>
+<table class="heatmap">
+  <tr><th>Category</th>{% for m in months %}<th class="num">{{ month_short(m) }}</th>{% endfor %}</tr>
+  {% for row in history %}
+  <tr>
+    <td><a href="{{ url_for('transactions', month='all', category=row.category_id) }}">{{ row.category }}</a></td>
+    {% for c in row.cells %}
+    <td class="cell heat-{{ c.level or 'none' }}" style="{{ c.pct|over_style }}"
+        title="{{ row.category }}, {{ month_short(c.month) }}: {{ c.spent_cents|money }}{% if c.budget_cents %} of {{ c.budget_cents|money }}{% endif %}">
+      <a href="{{ url_for('transactions', month=c.month, category=row.category_id) }}"
+         aria-label="{{ row.category }} transactions, {{ month_short(c.month) }}">
+        {% if c.pct is not none %}{{ (c.pct * 100)|round|int }}%{% else %}<span class="muted">—</span>{% endif %}</a>
+    </td>
+    {% endfor %}
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% endblock %}

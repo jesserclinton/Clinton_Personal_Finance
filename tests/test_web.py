@@ -126,3 +126,57 @@ def test_sort_headers_keep_filters_and_toggle(client):
     # Removing a filter chip keeps the sort
     assert 'href="/transactions?month=all&amp;sort=amount&amp;dir=asc"' in html
     assert 'name="sort" value="amount"' in html
+
+
+def test_budgets_page_save_and_export(client):
+    upload(client, "truist_sample.csv", account_id="auto")
+    assert client.get("/budgets?month=2026-11").status_code == 200
+    r = client.post("/budgets", data={"month": "2026-11", "budget-1": "$10.00", "budget-3": ""}, follow_redirects=True)
+    html = r.get_data(as_text=True)
+    assert "Saved income and budgets" in html and "(1 change(s))" in html
+    assert "46%" in html and "heat-green" in html   # Groceries: 4.58 of 10.00
+    assert "Last 6 months" in html
+    r = client.get("/export.csv?month=2026-11")
+    assert r.mimetype == "text/csv" and "budget-2026-11.csv" in r.headers["Content-Disposition"]
+    assert "Groceries,10.00,4.58,5.42,46%" in r.get_data(as_text=True)
+
+
+def test_budgets_rejects_bad_input(client):
+    upload(client, "truist_sample.csv", account_id="auto")
+    r = client.post("/budgets", data={"month": "2026-11", "budget-1": "abc"}, follow_redirects=True)
+    assert b"isn&#39;t an amount" in r.data
+    assert client.get("/budgets?month=nope").status_code == 400
+
+
+def test_budgets_apply_from_a_start_month(client):
+    upload(client, "truist_sample.csv", account_id="auto")
+    r = client.post("/budgets", data={"month": "2026-11", "budget-1": "10", "scope": "from",
+                                      "start_month": "2026-03"}, follow_redirects=True)
+    assert b"from March 2026 through November 2026" in r.data
+    assert 'value="10.00"' in client.get("/budgets?month=2026-03").get_data(as_text=True)
+    assert 'value="10.00"' not in client.get("/budgets?month=2026-02").get_data(as_text=True)
+    r = client.post("/budgets", data={"month": "2026-11", "budget-1": "10", "scope": "from",
+                                      "start_month": "2027-01"}, follow_redirects=True)
+    assert b"must be on or before" in r.data
+
+
+def test_budgets_page_income_and_savings(client):
+    upload(client, "truist_sample.csv", account_id="auto")
+    # Paychecks/Salary is category 4 in the sample (an income category)
+    r = client.post("/budgets", data={"month": "2026-11", "budget-4": "3000", "actual-4": "",
+                                      "new_income": "Side job", "new_income_expected": "200",
+                                      "new_income_actual": "150", "budget-1": "100"}, follow_redirects=True)
+    html = r.get_data(as_text=True)
+    assert "Left to save or invest" in html and "Side job" in html
+    assert "$3,200.00" in html          # planned income: 3000 + 200
+    assert "$3,100.00" in html          # planned left: 3200 - 100 groceries budget
+    assert "$2,550.00" in html          # actual income: 2400 imported + 150 entered
+    assert "entered · imported" in html
+
+
+def test_heatmap_cells_link_to_filtered_transactions(client):
+    upload(client, "truist_sample.csv", account_id="auto")
+    client.post("/budgets", data={"month": "2026-11", "budget-1": "10"})
+    html = client.get("/budgets?month=2026-11").get_data(as_text=True)
+    assert 'href="/transactions?month=2026-11&amp;category=1"' in html
+    assert 'href="/transactions?month=2026-08&amp;category=1"' in html   # earlier month in the grid
