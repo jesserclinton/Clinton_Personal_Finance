@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Accounts · Budget{% endblock %}
+{% block content %}
+{# Credit cards are shown as the amount owed; everything else as the balance. #}
+{% macro amt(r, cents) %}{{ ((-cents if r.account.kind == 'credit' else cents))|money }}{% endmacro %}
+
+<div class="month-nav">
+  <h2>Accounts</h2>
+  <span class="spacer"></span>
+  <details>
+    <summary class="btn">+ Add an account</summary>
+    <form class="inline" method="post" action="{{ url_for('add_account') }}" style="margin-top:.6rem">
+      <input name="name" placeholder="USAA Savings" required aria-label="Account name">
+      <select name="bank" aria-label="Bank"><option value="usaa">USAA</option><option value="truist">Truist</option><option value="other">Other</option></select>
+      <select name="kind" aria-label="Type"><option value="savings">Savings</option><option value="checking">Checking</option><option value="credit">Credit card</option></select>
+      <button>Add</button>
+    </form>
+  </details>
+</div>
+<p class="muted">Type in the balance your bank shows, with the date it's from. Once an account has two balances, the app checks
+  that the transactions imported between those dates add up to the change. Use the bank's <em>current</em> (posted) balance,
+  not the available balance, since pending transactions aren't imported. An older statement's closing balance makes a good first entry.</p>
+
+{% for r in rows %}
+{% set credit = r.account.kind == 'credit' %}
+<section class="acct" id="account-{{ r.account.id }}">
+  <header>
+    <h3>{{ r.account.name }}</h3>
+    <form method="post" action="{{ url_for('change_account_kind', account_id=r.account.id) }}">
+      <select name="kind" aria-label="Type for {{ r.account.name }}" onchange="this.form.submit()">
+        {% for k, label in [('checking', 'Checking'), ('savings', 'Savings'), ('credit', 'Credit card')] %}
+          <option value="{{ k }}" {% if r.account.kind == k %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <noscript><button>Save</button></noscript>
+    </form>
+    <span class="spacer"></span>
+    {% if r.status == 'ok' %}<span class="status ok">✓ Transactions match</span>
+    {% elif r.status == 'off' %}<span class="status off">{{ r.n_mismatches }} period{{ " doesn't" if r.n_mismatches == 1 else "s don't" }} match</span>
+    {% elif r.status == 'single' %}<span class="status">Add a second balance to check</span>
+    {% else %}<span class="status">No balance entered</span>{% endif %}
+  </header>
+
+  <div class="totals">
+    {% if r.checks %}{% set latest = r.checks[0] %}
+    <span>{{ 'Owed' if credit else 'Balance' }} you entered<div>{{ amt(r, latest.balance_cents) }}</div><small>as of {{ latest.as_of }}</small></span>
+    {% endif %}
+    {% if r.estimate and r.estimate.n_after %}
+    <span>{{ 'Owed' if credit else 'Balance' }} from transactions<div>{{ amt(r, r.estimate.balance_cents) }}</div>
+      <small>through {{ r.estimate.through }}, adding {{ r.estimate.n_after }} newer transaction{{ '' if r.estimate.n_after == 1 else 's' }}</small></span>
+    {% endif %}
+    <span>Imported transactions<div>{{ r.n_tx }}</div>
+      <small>{% if r.n_tx %}{{ r.first_tx }} to {{ r.last_tx }}{% else %}none yet{% endif %}</small></span>
+  </div>
+
+  <form class="balance-form" method="post" action="{{ url_for('add_balance', account_id=r.account.id) }}">
+    <label>{{ 'Amount owed' if credit else 'Balance' }}
+      <input class="money" name="balance" inputmode="decimal" placeholder="0.00" required></label>
+    <label>As of the end of
+      <input type="date" name="as_of" value="{{ today }}" max="{{ today }}" required></label>
+    <label>Note (optional)
+      <input name="note" placeholder="e.g. statement closing balance"></label>
+    <button>Save balance</button>
+  </form>
+
+  {% if r.checks %}
+  <table>
+    <tr><th>As of</th><th class="num">{{ 'Owed' if credit else 'Balance' }}</th><th class="num">Change from transactions</th>
+        <th class="num">Expected</th><th class="num">Difference</th><th></th></tr>
+    {% for c in r.checks %}
+    {% if c.expected_cents is none %}
+    <tr class="anchor">
+      <td class="date">{{ c.as_of }}{% if c.note %}<div class="muted small">{{ c.note }}</div>{% endif %}</td>
+      <td class="num">{{ amt(r, c.balance_cents) }}</td>
+      <td colspan="3" class="muted">Starting point{% if r.estimate and r.estimate.opening_cents is not none and loop.last %}: before your first imported transaction the account held {{ amt(r, r.estimate.opening_cents) }}{% endif %}</td>
+      <td class="num"><form method="post" action="{{ url_for('delete_balance', balance_id=c.id) }}" onsubmit="return confirm('Delete this balance?')"><button class="secondary">Delete</button></form></td>
+    </tr>
+    {% else %}
+    <tr>
+      <td class="date">{{ c.as_of }}{% if c.note %}<div class="muted small">{{ c.note }}</div>{% endif %}</td>
+      <td class="num">{{ amt(r, c.balance_cents) }}</td>
+      <td class="num"><a href="{{ url_for('transactions', month='all', account=r.account.id, after=c.prev_as_of, through=c.as_of) }}"
+             title="See these transactions">{% if credit %}{{ (-c.activity_cents)|money }}{% else %}{{ '+' if c.activity_cents > 0 }}{{ c.activity_cents|money }}{% endif %}</a>
+          <div class="muted small">{{ c.n }} since {{ c.prev_as_of }}</div></td>
+      <td class="num">{{ amt(r, c.expected_cents) }}</td>
+      {% if c.diff_cents == 0 %}<td class="num diff-ok">✓ Matches</td>
+      {% else %}<td class="num diff-off">{{ amt(r, c.diff_cents) }}
+        <div class="why">{% if credit %}{{ 'you owe less than expected' if c.diff_cents > 0 else 'you owe more than expected' }}{% else %}{{ 'bank shows more' if c.diff_cents > 0 else 'bank shows less' }}{% endif %}</div></td>{% endif %}
+      <td class="num"><form method="post" action="{{ url_for('delete_balance', balance_id=c.id) }}" onsubmit="return confirm('Delete this balance?')"><button class="secondary">Delete</button></form></td>
+    </tr>
+    {% endif %}
+    {% endfor %}
+  </table>
+  {% set off = r.checks|selectattr('diff_cents')|list %}
+  {% if off %}
+  <p class="muted">When the bank shows more than the transactions explain, a deposit may be missing or a charge may have been
+    imported twice. When it shows less, a charge may be missing, or a transaction you removed may need restoring
+    (tick "Show removed" in the filters). Click the change amount to see exactly which transactions were counted.
+    {% if off|selectattr('past_imports')|list %}Some balances are dated after your last import for this account
+    ({{ r.last_tx or 'none yet' }}), so import newer transactions first.{% endif %}</p>
+  {% endif %}
+  {% endif %}
+</section>
+{% else %}
+<p class="muted">No accounts yet. They're created when you <a href="{{ url_for('import_view') }}">import a statement</a>, or add one above.</p>
+{% endfor %}
+{% endblock %}

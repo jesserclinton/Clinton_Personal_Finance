@@ -4,6 +4,7 @@ from datetime import date
 
 from flask import Flask, Response, abort, flash, redirect, render_template, request, url_for
 
+from . import accounts as acctmod
 from . import budgets as budgetmod
 from . import db as dbmod
 from . import ledger
@@ -229,7 +230,11 @@ def create_app(test_config=None):
             direction=args.get("direction") or None,
             search=(args.get("q") or "").strip() or None,
             removed=args.get("removed") == "1",
+            after=_iso_date(args.get("after")),
+            through=_iso_date(args.get("through")),
         )
+        if filters["after"] or filters["through"]:
+            month = ""  # a date range replaces the month
         sort = args.get("sort") if args.get("sort") in ledger.SORTS else "date"
         direction = args.get("dir")
         descending = (direction == "desc") if direction in ("asc", "desc") else ledger.DEFAULT_DESCENDING[sort]
@@ -241,6 +246,8 @@ def create_app(test_config=None):
             "direction": filters["direction"],
             "q": filters["search"],
             "removed": "1" if filters["removed"] else None,
+            "after": filters["after"],
+            "through": filters["through"],
             "sort": sort if sort != "date" or not descending else None,
             "dir": ("desc" if descending else "asc") if (sort != "date" or not descending) else None,
         }
@@ -306,7 +313,97 @@ def create_app(test_config=None):
             chips.append(("Search", f"\u201c{filters['search']}\u201d", without("q")))
         if filters["removed"]:
             chips.append(("Showing", "Removed transactions", without("removed")))
+        if filters["after"] or filters["through"]:
+            def day(iso):
+                d = date.fromisoformat(iso)
+                return f"{d:%b} {d.day}, {d.year}"
+            if filters["after"] and filters["through"]:
+                label = f"after {day(filters['after'])} through {day(filters['through'])}"
+            elif filters["after"]:
+                label = f"after {day(filters['after'])}"
+            else:
+                label = f"through {day(filters['through'])}"
+            params = {**base, "after": None, "through": None}
+            chips.append(("Dates", label, url_for("transactions", **{k: v for k, v in params.items() if v})))
         return chips
+
+    def _iso_date(value):
+        try:
+            return date.fromisoformat(value).isoformat() if value else None
+        except ValueError:
+            return None
+
+    def _cents(value):
+        """'1,234.56' or '$-20' -> cents. Raises ValueError with a readable message."""
+        raw = (value or "").strip()
+        cleaned = raw.replace("$", "").replace(",", "").replace(" ", "")
+        if cleaned.startswith("(") and cleaned.endswith(")"):
+            cleaned = "-" + cleaned[1:-1]
+        try:
+            return round(float(cleaned) * 100)
+        except ValueError:
+            raise ValueError(f"\"{raw}\" isn't an amount") from None
+
+    @app.route("/accounts")
+    def accounts_view():
+        db = dbmod.get_db()
+        return render_template("accounts.html", rows=acctmod.all_accounts(db),
+                               today=date.today().isoformat())
+
+    @app.post("/accounts")
+    def add_account():
+        db = dbmod.get_db()
+        name = request.form.get("name", "").strip()
+        kind = request.form.get("kind", "checking")
+        if not name or kind not in acctmod.KINDS:
+            flash("Give the account a name and type.", "error")
+            return redirect(url_for("accounts_view"))
+        if db.execute("SELECT 1 FROM accounts WHERE name = ?", (name,)).fetchone():
+            flash(f"There's already an account called {name}.", "error")
+            return redirect(url_for("accounts_view"))
+        db.execute("INSERT INTO accounts (name, bank, kind) VALUES (?, ?, ?)",
+                   (name, request.form.get("bank", "other"), kind))
+        db.commit()
+        flash(f"Added {name}. Enter its balance below.", "ok")
+        return redirect(url_for("accounts_view"))
+
+    @app.post("/accounts/<int:account_id>/kind")
+    def change_account_kind(account_id):
+        kind = request.form.get("kind")
+        if kind not in acctmod.KINDS:
+            abort(400)
+        db = dbmod.get_db()
+        db.execute("UPDATE accounts SET kind = ? WHERE id = ?", (kind, account_id))
+        db.commit()
+        return redirect(url_for("accounts_view") + f"#account-{account_id}")
+
+    @app.post("/accounts/<int:account_id>/balances")
+    def add_balance(account_id):
+        db = dbmod.get_db()
+        account = db.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
+        if not account:
+            abort(404)
+        anchor = url_for("accounts_view") + f"#account-{account_id}"
+        try:
+            cents = _cents(request.form.get("balance"))
+            as_of = request.form.get("as_of") or date.today().isoformat()
+            if account["kind"] == "credit":
+                cents = -cents  # entered as the amount owed
+            acctmod.add_balance(db, account_id, as_of, cents, request.form.get("note", ""))
+        except ValueError as exc:
+            msg = str(exc) if "amount" in str(exc) else "Pick a valid date"
+            flash(f"{msg}.", "error")
+            return redirect(anchor)
+        flash(f"Saved the {account['name']} balance for {as_of}.", "ok")
+        return redirect(anchor)
+
+    @app.post("/balances/<int:balance_id>/delete")
+    def delete_balance(balance_id):
+        db = dbmod.get_db()
+        row = db.execute("SELECT account_id FROM account_balances WHERE id = ?", (balance_id,)).fetchone()
+        acctmod.delete_balance(db, balance_id)
+        flash("Deleted that balance.", "ok")
+        return redirect(url_for("accounts_view") + (f"#account-{row['account_id']}" if row else ""))
 
     @app.post("/transactions/<int:tx_id>/category")
     def change_category(tx_id):

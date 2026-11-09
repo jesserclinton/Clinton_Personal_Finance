@@ -196,12 +196,36 @@
                    background:linear-gradient(145deg, #262b33 0%, var(--card-2) 100%); }
   .totals div { font-size:1.45em; font-weight:650; color:var(--fg); margin-top:.15rem; }
   .totals div.pos { color:var(--pos); } .totals div.neg { color:var(--neg); }
+  /* Accounts / balance checks */
+  summary.btn { list-style:none; display:inline-flex; align-items:center; gap:.4rem; padding:.38rem .9rem; border-radius:6px; font-weight:500;
+                border:1px solid #c86a38; background:linear-gradient(180deg, var(--primary) 0%, var(--primary-2) 100%); color:var(--primary-fg); }
+  summary.btn::-webkit-details-marker { display:none; }
+  .acct { border:1px solid var(--line); border-radius:12px; padding:1rem 1.1rem 1.1rem; margin:0 0 1.25rem;
+          background:linear-gradient(160deg, #252a32 0%, var(--card-2) 100%); scroll-margin-top:1rem; }
+  .acct > header { display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; margin-bottom:.75rem; }
+  .acct > header h3 { margin:0; }
+  .acct > header .spacer { flex:1; }
+  .acct > header select { font-size:.9em; padding:.2rem .4rem; }
+  .status { display:inline-flex; align-items:center; gap:.35rem; padding:.15rem .65rem; border-radius:999px; font-size:.85em; font-weight:600;
+            border:1px solid var(--line-strong); color:var(--muted); background:var(--card); }
+  .status.ok { color:#cfe9d5; border-color:#4b7a57; background:linear-gradient(180deg, #2f4d37 0%, #273f2e 100%); }
+  .status.off { color:#f6d6d0; border-color:#9a4a40; background:linear-gradient(180deg, #5e2c27 0%, #4b2420 100%); }
+  .acct .totals { margin:.25rem 0 1rem; }
+  .acct .totals small { display:block; font-size:.85em; color:var(--muted); margin-top:.1rem; }
+  form.balance-form { display:flex; gap:.6rem; flex-wrap:wrap; align-items:flex-end; margin:0 0 1rem; }
+  form.balance-form label { display:flex; flex-direction:column; gap:.3rem; font-size:.9em; color:var(--muted); }
+  form.balance-form input.money { width:9rem; text-align:right; }
+  form.balance-form input[name=note] { width:14rem; max-width:100%; }
+  td.diff-ok { color:var(--pos); } td.diff-off { color:var(--neg); font-weight:600; }
+  tr.anchor td { color:var(--muted); }
+  .why { font-size:.85em; color:var(--muted); margin:.15rem 0 0; }
+  @media (max-width: 700px) { form.balance-form > label { flex:1 1 100%; } form.balance-form input.money, form.balance-form input[name=note] { width:100%; } }
 </style>
 </head>
 <body>
 <nav>
   <span class="brand">Clinton <span>Finance</span></span>
-  {% for endpoint, label in [('index', 'Summary'), ('transactions', 'Transactions'), ('budgets_view', 'Budgets'), ('review', 'Review'), ('import_view', 'Import'), ('categories_view', 'Categories')] %}
+  {% for endpoint, label in [('index', 'Summary'), ('transactions', 'Transactions'), ('budgets_view', 'Budgets'), ('accounts_view', 'Accounts'), ('review', 'Review'), ('import_view', 'Import'), ('categories_view', 'Categories')] %}
     <a href="{{ url_for(endpoint) }}" {% if request.endpoint == endpoint %}class="active" aria-current="page"{% endif %}>{{ label }}</a>
   {% endfor %}
 </nav>

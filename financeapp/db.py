@@ -69,6 +69,17 @@ CREATE TABLE IF NOT EXISTS budgets (
     amount_cents INTEGER NOT NULL,
     PRIMARY KEY (category_id, month)
 );
+
+-- A balance you read off the bank's site or a statement, as of the end of a day.
+-- Signed like transactions: credit card debt is negative.
+CREATE TABLE IF NOT EXISTS account_balances (
+    id INTEGER PRIMARY KEY,
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    as_of TEXT NOT NULL,                 -- ISO YYYY-MM-DD
+    balance_cents INTEGER NOT NULL,
+    note TEXT,
+    UNIQUE (account_id, as_of)
+);
 """
 
 
