@@ -180,3 +180,39 @@ def test_heatmap_cells_link_to_filtered_transactions(client):
     html = client.get("/budgets?month=2026-11").get_data(as_text=True)
     assert 'href="/transactions?month=2026-11&amp;category=1"' in html
     assert 'href="/transactions?month=2026-08&amp;category=1"' in html   # earlier month in the grid
+
+
+def test_search_box_sits_beside_filters_button(client):
+    html = client.get("/transactions?month=all&q=coffee").get_data(as_text=True)
+    toolbar = html[html.index('class="toolbar"'):html.index('id="filters-panel"')]
+    # The search input lives in the toolbar, still submits with the filters form, and keeps its value
+    assert 'id="tx-search"' in toolbar and 'form="filters-panel"' in toolbar and 'value="coffee"' in toolbar
+    panel = html[html.index('id="filters-panel"'):html.index('</form>', html.index('id="filters-panel"'))]
+    assert 'name="q"' not in panel
+    # Live search swaps these regions in place
+    assert 'id="tx-results"' in html and 'id="tx-chips"' in html
+
+
+def test_edit_only_this_transaction(client, app):
+    upload(client, "truist_sample.csv", account_id="auto")
+    with app.app_context():
+        from financeapp import db as dbmod
+        db = dbmod.get_db()
+        pair = db.execute("""SELECT merchant_key, MIN(id) a, MAX(id) b, MIN(category_id) c FROM transactions
+                             GROUP BY merchant_key HAVING COUNT(*) > 1""").fetchone()
+    assert pair, "fixture needs a merchant with two transactions"
+    # The dialog sends remember=on plus only_this=on when the box is ticked
+    client.post(f"/transactions/{pair['a']}/category",
+                data={"new_category": "One-off", "remember": "on", "only_this": "on", "next": "/transactions"})
+    with app.app_context():
+        db = dbmod.get_db()
+        a, b = (db.execute("SELECT c.name FROM transactions t LEFT JOIN categories c ON c.id = t.category_id WHERE t.id = ?",
+                           (i,)).fetchone()[0] for i in (pair["a"], pair["b"]))
+        assert a == "One-off" and b != "One-off"
+        assert db.execute("SELECT COUNT(*) FROM rules WHERE merchant_key = ?", (pair["merchant_key"],)).fetchone()[0] == 0
+    # Unticked, it still applies to the whole merchant
+    client.post(f"/transactions/{pair['a']}/category",
+                data={"new_category": "Whole merchant", "remember": "on", "next": "/transactions"})
+    with app.app_context():
+        db = dbmod.get_db()
+        assert db.execute("SELECT COUNT(*) FROM rules WHERE merchant_key = ?", (pair["merchant_key"],)).fetchone()[0] == 1

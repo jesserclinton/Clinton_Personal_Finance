@@ -312,7 +312,8 @@ def create_app(test_config=None):
     def change_category(tx_id):
         db = dbmod.get_db()
         cid = resolve_category(request.form)
-        remember = request.form.get("remember") == "on"
+        # "Only change this transaction" wins over remembering for the merchant
+        remember = request.form.get("remember") == "on" and request.form.get("only_this") != "on"
         try:
             others = ledger.set_category(db, tx_id, cid, remember=remember)
         except ValueError:
