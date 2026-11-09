@@ -172,3 +172,11 @@ def test_budgets_page_income_and_savings(client):
     assert "$3,100.00" in html          # planned left: 3200 - 100 groceries budget
     assert "$2,550.00" in html          # actual income: 2400 imported + 150 entered
     assert "entered · imported" in html
+
+
+def test_heatmap_cells_link_to_filtered_transactions(client):
+    upload(client, "truist_sample.csv", account_id="auto")
+    client.post("/budgets", data={"month": "2026-11", "budget-1": "10"})
+    html = client.get("/budgets?month=2026-11").get_data(as_text=True)
+    assert 'href="/transactions?month=2026-11&amp;category=1"' in html
+    assert 'href="/transactions?month=2026-08&amp;category=1"' in html   # earlier month in the grid

@@ -108,11 +108,13 @@
   <tr><th>Category</th>{% for m in months %}<th class="num">{{ month_short(m) }}</th>{% endfor %}</tr>
   {% for row in history %}
   <tr>
-    <td>{{ row.category }}</td>
+    <td><a href="{{ url_for('transactions', month='all', category=row.category_id) }}">{{ row.category }}</a></td>
     {% for c in row.cells %}
     <td class="cell heat-{{ c.level or 'none' }}" style="{{ c.pct|over_style }}"
         title="{{ row.category }}, {{ month_short(c.month) }}: {{ c.spent_cents|money }}{% if c.budget_cents %} of {{ c.budget_cents|money }}{% endif %}">
-      {% if c.pct is not none %}{{ (c.pct * 100)|round|int }}%{% else %}<span class="muted">—</span>{% endif %}
+      <a href="{{ url_for('transactions', month=c.month, category=row.category_id) }}"
+         aria-label="{{ row.category }} transactions, {{ month_short(c.month) }}">
+        {% if c.pct is not none %}{{ (c.pct * 100)|round|int }}%{% else %}<span class="muted">—</span>{% endif %}</a>
     </td>
     {% endfor %}
   </tr>
