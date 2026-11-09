@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="month-nav">
+  <h2>{{ month_name }}</h2>
+  <a class="btn" href="{{ url_for('budgets_view', month=prev_month) }}" aria-label="Previous month">‹ Prev</a>
+  <a class="btn" href="{{ url_for('budgets_view', month=next_month) }}" aria-label="Next month">Next ›</a>
+  <form class="inline" method="get"><input type="month" name="month" value="{{ month }}" aria-label="Month"><button>Go</button></form>
+  <span class="spacer"></span>
+  <a class="btn primary" href="{{ url_for('export_csv', month=month) }}">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0l-4-4m4 4l4-4M5 19h14"/></svg> Export CSV</a>
+</div>
+
+<div class="legend" aria-label="Colour key">
+  Share of budget used:
+  {% for floor, name, label in levels %}<span class="swatch heat-{{ name }}">{{ label }}</span>{% endfor %}
+  <span class="swatch heat-none">No budget</span>
+</div>
+
+{% if budgeted %}
+<div class="totals">
+  <span>Budgeted<div>{{ total_budget|money }}</div></span>
+  <span>Spent in budgeted categories<div class="neg">{{ total_budgeted_spent|money }}</div></span>
+  <span>Left<div class="{{ 'pos' if total_budget >= total_budgeted_spent else 'neg' }}">{{ (total_budget - total_budgeted_spent)|money }}</div></span>
+</div>
+<div class="tiles">
+  {% for r in budgeted %}
+  <a class="tile heat-{{ r.level }}" href="{{ url_for('transactions', month=month, category=r.category_id) }}"
+     title="See {{ r.category }} transactions">
+    <div class="name">{{ r.category }}</div>
+    <div class="pct">{{ (r.pct * 100)|round|int }}%</div>
+    <div class="sub">{{ r.spent_cents|money }} of {{ r.budget_cents|money }}
+      · {% if r.remaining_cents >= 0 %}{{ r.remaining_cents|money }} left{% else %}{{ (-r.remaining_cents)|money }} over{% endif %}</div>
+    <div class="bar"><i style="width: {{ [r.pct * 100, 100]|min }}%"></i></div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<p class="muted">No budgets yet. Enter monthly amounts below; categories without one aren't coloured.</p>
+{% endif %}
+
+<h3>Set budgets</h3>
+<p class="muted">A budget carries forward to later months until you change it. Leave a box empty for no budget.</p>
+<form method="post">
+  <input type="hidden" name="month" value="{{ month }}">
+  <table>
+    <tr><th>Category</th><th class="num">Monthly budget</th><th class="num">Spent</th><th class="num">Left</th><th class="num">Used</th></tr>
+    {% for r in status %}
+    <tr>
+      <td><a href="{{ url_for('transactions', month=month, category=r.category_id) }}">{{ r.category }}</a></td>
+      <td class="num"><input class="money" name="budget-{{ r.category_id }}" inputmode="decimal" placeholder="—"
+             value="{{ '%.2f'|format(r.budget_cents / 100) if r.budget_cents else '' }}" aria-label="Budget for {{ r.category }}"></td>
+      <td class="num">{{ r.spent_cents|money }}</td>
+      <td class="num {% if r.remaining_cents is not none and r.remaining_cents < 0 %}neg{% endif %}">{{ r.remaining_cents|money if r.remaining_cents is not none else '' }}</td>
+      <td class="num">{% if r.level %}<span class="pill heat-{{ r.level }}">{{ (r.pct * 100)|round|int }}%</span>{% endif %}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="muted">No expense categories yet. <a href="{{ url_for('import_view') }}">Import a statement</a> first.</td></tr>
+    {% endfor %}
+  </table>
+  {% if status %}<p><button>Save budgets</button></p>{% endif %}
+</form>
+
+{% if history %}
+<h3>Last 6 months</h3>
+<table class="heatmap">
+  <tr><th>Category</th>{% for m in months %}<th class="num">{{ month_short(m) }}</th>{% endfor %}</tr>
+  {% for row in history %}
+  <tr>
+    <td>{{ row.category }}</td>
+    {% for c in row.cells %}
+    <td class="cell heat-{{ c.level or 'none' }}"
+        title="{{ row.category }}, {{ month_short(c.month) }}: {{ c.spent_cents|money }}{% if c.budget_cents %} of {{ c.budget_cents|money }}{% endif %}">
+      {% if c.pct is not none %}{{ (c.pct * 100)|round|int }}%{% else %}<span class="muted">—</span>{% endif %}
+    </td>
+    {% endfor %}
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% endblock %}

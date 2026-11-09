@@ -126,3 +126,23 @@ def test_sort_headers_keep_filters_and_toggle(client):
     # Removing a filter chip keeps the sort
     assert 'href="/transactions?month=all&amp;sort=amount&amp;dir=asc"' in html
     assert 'name="sort" value="amount"' in html
+
+
+def test_budgets_page_save_and_export(client):
+    upload(client, "truist_sample.csv", account_id="auto")
+    assert client.get("/budgets?month=2026-11").status_code == 200
+    r = client.post("/budgets", data={"month": "2026-11", "budget-1": "$10.00", "budget-3": ""}, follow_redirects=True)
+    html = r.get_data(as_text=True)
+    assert "Saved 1 budget change" in html
+    assert "46%" in html and "heat-green" in html   # Groceries: 4.58 of 10.00
+    assert "Last 6 months" in html
+    r = client.get("/export.csv?month=2026-11")
+    assert r.mimetype == "text/csv" and "budget-2026-11.csv" in r.headers["Content-Disposition"]
+    assert "Groceries,10.00,4.58,5.42,46%" in r.get_data(as_text=True)
+
+
+def test_budgets_rejects_bad_input(client):
+    upload(client, "truist_sample.csv", account_id="auto")
+    r = client.post("/budgets", data={"month": "2026-11", "budget-1": "abc"}, follow_redirects=True)
+    assert b"isn&#39;t an amount" in r.data
+    assert client.get("/budgets?month=nope").status_code == 400

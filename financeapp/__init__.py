@@ -2,8 +2,9 @@
 import os
 from datetime import date
 
-from flask import Flask, abort, flash, redirect, render_template, request, url_for
+from flask import Flask, Response, abort, flash, redirect, render_template, request, url_for
 
+from . import budgets as budgetmod
 from . import db as dbmod
 from . import ledger
 from .importers import ImportError_
@@ -62,6 +63,64 @@ def create_app(test_config=None):
             income=sum(r["income_cents"] for r in rows),
             spent=sum(r["spent_cents"] for r in rows),
             to_review=to_review,
+        )
+
+    def _month_arg():
+        month = request.values.get("month") or date.today().strftime("%Y-%m")
+        try:
+            date.fromisoformat(month + "-01")
+        except ValueError:
+            abort(400, "Month should look like 2026-11")
+        return month
+
+    @app.route("/budgets", methods=["GET", "POST"])
+    def budgets_view():
+        db = dbmod.get_db()
+        month = _month_arg()
+        if request.method == "POST":
+            amounts = {}
+            for key, value in request.form.items():
+                if not key.startswith("budget-"):
+                    continue
+                cid = int(key.removeprefix("budget-"))
+                value = value.strip().replace("$", "").replace(",", "")
+                try:
+                    amounts[cid] = round(float(value) * 100) if value else 0
+                except ValueError:
+                    flash(f"\"{value}\" isn't an amount.", "error")
+                    return redirect(url_for("budgets_view", month=month))
+                if amounts[cid] < 0:
+                    amounts[cid] = 0
+            n = budgetmod.set_budgets(db, month, amounts)
+            flash(f"Saved {n} budget change(s) from {budgetmod.month_label(month)} onward.", "ok")
+            return redirect(url_for("budgets_view", month=month))
+        status = budgetmod.budget_status(db, month)
+        months, history = budgetmod.heatmap_history(db, month)
+        budgeted = [r for r in status if r["budget_cents"]]
+        return render_template(
+            "budgets.html",
+            month=month,
+            month_name=budgetmod.month_label(month),
+            prev_month=budgetmod.month_add(month, -1),
+            next_month=budgetmod.month_add(month, 1),
+            status=status,
+            budgeted=budgeted,
+            total_budget=sum(r["budget_cents"] for r in budgeted),
+            total_budgeted_spent=sum(r["spent_cents"] for r in budgeted),
+            months=months,
+            month_short=lambda m: budgetmod.month_label(m, "%b %Y"),
+            history=history,
+            levels=budgetmod.LEVELS,
+        )
+
+    @app.route("/export.csv")
+    def export_csv():
+        month = _month_arg()
+        body = budgetmod.export_month_csv(dbmod.get_db(), month)
+        return Response(
+            body,
+            mimetype="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=budget-{month}.csv"},
         )
 
     @app.route("/import", methods=["GET", "POST"])

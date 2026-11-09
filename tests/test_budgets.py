@@ -1,0 +1,96 @@
+import csv
+import io
+
+from financeapp import budgets, ledger
+
+from .conftest import make_account
+
+
+def add(db, acct, date, desc, cents, category):
+    cid = ledger.get_or_create_category(db, category, "income" if cents > 0 and category == "Paycheck" else None)
+    n = db.execute("SELECT COUNT(*) FROM transactions").fetchone()[0]
+    db.execute(
+        """INSERT INTO transactions (account_id, date, description, amount_cents, category_id,
+           category_source, merchant_key, fingerprint) VALUES (?, ?, ?, ?, ?, 'user', ?, ?)""",
+        (acct, date, desc, cents, cid, desc.upper(), f"fp{n}"),
+    )
+    db.commit()
+    return cid
+
+
+def test_heat_levels():
+    assert budgets.heat_level(None) is None
+    assert budgets.heat_level(0) == "blue"
+    assert budgets.heat_level(0.19) == "blue"
+    assert budgets.heat_level(0.2) == "green"
+    assert budgets.heat_level(0.59) == "green"
+    assert budgets.heat_level(0.6) == "yellow"
+    assert budgets.heat_level(0.8) == "red"
+    assert budgets.heat_level(1.5) == "red"
+
+
+def test_month_add():
+    assert budgets.month_add("2026-11", 1) == "2026-12"
+    assert budgets.month_add("2026-12", 1) == "2027-01"
+    assert budgets.month_add("2026-01", -1) == "2025-12"
+    assert budgets.month_add("2026-11", -5) == "2026-06"
+
+
+def test_budgets_carry_forward_and_change(db):
+    acct = make_account(db, "Checking", "other")
+    groceries = add(db, acct, "2026-10-05", "Kroger", -5000, "Groceries")
+    budgets.set_budgets(db, "2026-09", {groceries: 40000})
+    assert budgets.effective_budgets(db, "2026-08") == {}
+    assert budgets.effective_budgets(db, "2026-12") == {groceries: 40000}
+    budgets.set_budgets(db, "2026-11", {groceries: 30000})
+    assert budgets.effective_budgets(db, "2026-10") == {groceries: 40000}
+    assert budgets.effective_budgets(db, "2027-01") == {groceries: 30000}
+    budgets.set_budgets(db, "2027-02", {groceries: 0})          # stop budgeting
+    assert budgets.effective_budgets(db, "2027-03") == {}
+    assert budgets.set_budgets(db, "2027-03", {groceries: 0}) == 0  # no-op
+
+
+def test_budget_status_uses_net_spending_and_skips_transfers(db):
+    acct = make_account(db, "Checking", "other")
+    g = add(db, acct, "2026-11-02", "Kroger", -30000, "Groceries")
+    add(db, acct, "2026-11-03", "Kroger refund", 5000, "Groceries")
+    d = add(db, acct, "2026-11-04", "Wendys", -9000, "Fast Food")
+    add(db, acct, "2026-11-05", "Payment to USAA", -50000, "Credit Card Payment")   # transfer
+    budgets.set_budgets(db, "2026-11", {g: 50000, d: 10000})
+    rows = {r["category"]: r for r in budgets.budget_status(db, "2026-11")}
+    assert "Credit Card Payment" not in rows
+    assert rows["Groceries"]["spent_cents"] == 25000 and rows["Groceries"]["level"] == "green"   # 50%
+    assert rows["Fast Food"]["level"] == "red" and rows["Fast Food"]["remaining_cents"] == 1000  # 90%
+    assert list(rows)[0] == "Fast Food"   # most used first
+
+
+def test_heatmap_history(db):
+    acct = make_account(db, "Checking", "other")
+    g = add(db, acct, "2026-10-02", "Kroger", -10000, "Groceries")
+    add(db, acct, "2026-11-02", "Kroger", -45000, "Groceries")
+    budgets.set_budgets(db, "2026-10", {g: 50000})
+    months, rows = budgets.heatmap_history(db, "2026-11", months=3)
+    assert months == ["2026-09", "2026-10", "2026-11"]
+    cells = rows[0]["cells"]
+    assert [c["level"] for c in cells] == [None, "green", "red"]
+
+
+def test_export_csv(db):
+    acct = make_account(db, "Checking", "other")
+    add(db, acct, "2026-11-01", "Acme Payroll", 200000, "Paycheck")
+    g = add(db, acct, "2026-11-02", "Kroger", -30000, "Groceries")
+    add(db, acct, "2026-11-05", "Payment to USAA", -50000, "Credit Card Payment")
+    db.execute("""INSERT INTO transactions (account_id, date, description, amount_cents, merchant_key, fingerprint)
+                  VALUES (?, '2026-11-06', 'Mystery', -1000, 'M', 'fpx')""", (acct,))
+    db.commit()
+    budgets.set_budgets(db, "2026-11", {g: 40000})
+    rows = list(csv.reader(io.StringIO(budgets.export_month_csv(db, "2026-11"))))
+    flat = {r[0]: r for r in rows if r}
+    assert rows[0] == ["Month: November 2026"]
+    assert flat["Paycheck"] == ["Paycheck", "Acme Payroll", "2000.00"]
+    assert flat["Total income"][2] == "2000.00"
+    assert flat["Groceries"] == ["Groceries", "400.00", "300.00", "100.00", "75%"]
+    assert flat["Uncategorized"][2] == "10.00"
+    assert flat["Total spending"][2] == "310.00"
+    assert flat["NET (income minus spending)"][2] == "1690.00"
+    assert "Credit Card Payment" not in flat

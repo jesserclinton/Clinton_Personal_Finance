@@ -54,8 +54,8 @@ pytest
 
 - [x] CSV import for Truist and USAA, with duplicate skipping
 - [x] Automatic categories, review queue, editable categories, merchant rules
-- [ ] Monthly budgets per category with a heatmap (0–20% blue, 20–60% green,
+- [x] Monthly budgets per category with a heatmap (0–20% blue, 20–60% green,
       60–80% yellow, 80–100%+ red)
-- [ ] CSV export of income and spending per category
+- [x] CSV export of income and spending per category
 - [ ] PDF statement import for older history
 - [ ] Automated ingest (later, after the prototype)

@@ -117,6 +117,37 @@
   th.sortable a:hover, th.sortable.sorted a { color:var(--fg); }
   th.sortable .sort-arrow { font-size:.85em; opacity:.45; }
   th.sortable.sorted .sort-arrow { opacity:1; color:var(--primary-text); }
+  /* Budget heat levels: muted, each passes 4.5:1 with --heat-fg */
+  :root { --heat-fg:#f3f1ec; }
+  .heat-blue   { background:linear-gradient(145deg, #34557a 0%, #2a4566 100%); }
+  .heat-green  { background:linear-gradient(145deg, #3d6847 0%, #30543a 100%); }
+  .heat-yellow { background:linear-gradient(145deg, #85691d 0%, #6c5516 100%); }
+  .heat-red    { background:linear-gradient(145deg, #8c3a32 0%, #722e28 100%); }
+  .heat-none   { background:linear-gradient(145deg, #262b33 0%, var(--card-2) 100%); color:var(--muted); }
+  [class*="heat-"]:not(.heat-none) { color:var(--heat-fg); }
+  .legend { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; font-size:.85em; color:var(--muted); margin:.25rem 0 1rem; }
+  .legend .swatch { display:inline-flex; align-items:center; padding:.15rem .6rem; border-radius:999px; }
+  .month-nav { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; margin-bottom:1rem; }
+  .month-nav h2 { margin:0 .5rem 0 0; }
+  .month-nav .spacer { flex:1; }
+  a.btn { display:inline-flex; align-items:center; gap:.4rem; padding:.38rem .9rem; border-radius:6px; text-decoration:none; font-weight:500;
+          border:1px solid #3d5a7e; background:linear-gradient(180deg, var(--secondary) 0%, var(--secondary-2) 100%); color:var(--secondary-fg); }
+  a.btn:visited { color:var(--secondary-fg); }
+  a.btn.primary { border-color:#c86a38; background:linear-gradient(180deg, var(--primary) 0%, var(--primary-2) 100%); color:var(--primary-fg); }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr)); gap:.75rem; margin-bottom:1.5rem; }
+  .tile { border-radius:10px; padding:.75rem .85rem; border:1px solid rgba(255,255,255,.08); text-decoration:none; display:block; }
+  a.tile, a.tile:visited { color:var(--heat-fg); }
+  a.tile.heat-none, a.tile.heat-none:visited { color:var(--muted); }
+  .tile:hover { border-color:rgba(255,255,255,.3); }
+  .tile .name { font-weight:600; }
+  .tile .pct { font-size:1.6em; font-weight:700; line-height:1.2; margin-top:.2rem; }
+  .tile .sub { font-size:.85em; opacity:.92; }
+  .bar { height:6px; border-radius:3px; background:rgba(0,0,0,.3); overflow:hidden; margin-top:.5rem; }
+  .bar > i { display:block; height:100%; background:rgba(255,255,255,.75); }
+  .pill { display:inline-block; min-width:3.2em; text-align:center; padding:.1rem .5rem; border-radius:999px; font-size:.85em; font-weight:600; }
+  table.heatmap td.cell { text-align:center; font-variant-numeric:tabular-nums; font-weight:600; border-left:2px solid var(--card-2); }
+  table.heatmap th.num { text-align:center; }
+  td input.money { width:7.5rem; text-align:right; }
   .chip-clear { font-size:.85em; }
   .select-hint { display:none; } .select-hint.show { display:inline; }
 
@@ -150,7 +181,7 @@
 <body>
 <nav>
   <span class="brand">Clinton <span>Finance</span></span>
-  {% for endpoint, label in [('index', 'Summary'), ('transactions', 'Transactions'), ('review', 'Review'), ('import_view', 'Import'), ('categories_view', 'Categories')] %}
+  {% for endpoint, label in [('index', 'Summary'), ('transactions', 'Transactions'), ('budgets_view', 'Budgets'), ('review', 'Review'), ('import_view', 'Import'), ('categories_view', 'Categories')] %}
     <a href="{{ url_for(endpoint) }}" {% if request.endpoint == endpoint %}class="active" aria-current="page"{% endif %}>{{ label }}</a>
   {% endfor %}
 </nav>
