@@ -146,3 +146,15 @@ def test_budgets_rejects_bad_input(client):
     r = client.post("/budgets", data={"month": "2026-11", "budget-1": "abc"}, follow_redirects=True)
     assert b"isn&#39;t an amount" in r.data
     assert client.get("/budgets?month=nope").status_code == 400
+
+
+def test_budgets_apply_from_a_start_month(client):
+    upload(client, "truist_sample.csv", account_id="auto")
+    r = client.post("/budgets", data={"month": "2026-11", "budget-1": "10", "scope": "from",
+                                      "start_month": "2026-03"}, follow_redirects=True)
+    assert b"from March 2026 through November 2026" in r.data
+    assert 'value="10.00"' in client.get("/budgets?month=2026-03").get_data(as_text=True)
+    assert 'value="10.00"' not in client.get("/budgets?month=2026-02").get_data(as_text=True)
+    r = client.post("/budgets", data={"month": "2026-11", "budget-1": "10", "scope": "from",
+                                      "start_month": "2027-01"}, follow_redirects=True)
+    assert b"must be on or before" in r.data

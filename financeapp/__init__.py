@@ -91,8 +91,22 @@ def create_app(test_config=None):
                     return redirect(url_for("budgets_view", month=month))
                 if amounts[cid] < 0:
                     amounts[cid] = 0
-            n = budgetmod.set_budgets(db, month, amounts)
-            flash(f"Saved {n} budget change(s) from {budgetmod.month_label(month)} onward.", "ok")
+            start = request.form.get("start_month") if request.form.get("scope") == "from" else None
+            if start:
+                try:
+                    date.fromisoformat(start + "-01")
+                except ValueError:
+                    flash("Pick a valid month to apply the budgets from.", "error")
+                    return redirect(url_for("budgets_view", month=month))
+                if start > month:
+                    flash("The start month must be on or before the month you're viewing.", "error")
+                    return redirect(url_for("budgets_view", month=month))
+            n = budgetmod.set_budgets(db, month, amounts, start_month=start)
+            if start and start < month:
+                flash(f"Applied {n} budget(s) from {budgetmod.month_label(start)} through "
+                      f"{budgetmod.month_label(month)} and onward.", "ok")
+            else:
+                flash(f"Saved {n} budget change(s) from {budgetmod.month_label(month)} onward.", "ok")
             return redirect(url_for("budgets_view", month=month))
         status = budgetmod.budget_status(db, month)
         months, history = budgetmod.heatmap_history(db, month)
@@ -111,6 +125,7 @@ def create_app(test_config=None):
             month_short=lambda m: budgetmod.month_label(m, "%b %Y"),
             history=history,
             levels=budgetmod.LEVELS,
+            first_month=budgetmod.first_month_with_data(db) or month,
         )
 
     @app.route("/export.csv")

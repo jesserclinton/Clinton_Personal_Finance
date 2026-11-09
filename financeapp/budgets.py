@@ -55,8 +55,26 @@ def effective_budgets(db, month):
     return {r["category_id"]: r["amount_cents"] for r in rows if r["amount_cents"] > 0}
 
 
-def set_budgets(db, month, amounts):
-    """Save {category_id: cents or None} for a month (None/0 = no budget from here on)."""
+def set_budgets(db, month, amounts, start_month=None):
+    """Save {category_id: cents or None} for a month (None/0 = no budget from here on).
+
+    With start_month (earlier than month), each amount instead applies from
+    start_month through month, replacing anything set in between; months
+    before start_month keep their budgets, and changes already set for months
+    after `month` are kept.
+    """
+    if start_month and start_month < month:
+        for cid, cents in amounts.items():
+            db.execute(
+                "DELETE FROM budgets WHERE category_id = ? AND month BETWEEN ? AND ?",
+                (cid, start_month, month),
+            )
+            db.execute(
+                "INSERT INTO budgets (category_id, month, amount_cents) VALUES (?, ?, ?)",
+                (cid, start_month, cents or 0),
+            )
+        db.commit()
+        return sum(1 for c in amounts.values() if c)
     current = {**{cid: 0 for cid in amounts}, **effective_budgets(db, month)}
     changed = 0
     for cid, cents in amounts.items():
@@ -195,3 +213,8 @@ def export_month_csv(db, month):
 
     w.writerow(["NET (income minus spending)", "", _money(total_income - total_spent)])
     return out.getvalue()
+
+
+def first_month_with_data(db):
+    row = db.execute("SELECT MIN(substr(date, 1, 7)) FROM transactions WHERE removed = 0").fetchone()
+    return row[0]

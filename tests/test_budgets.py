@@ -94,3 +94,22 @@ def test_export_csv(db):
     assert flat["Total spending"][2] == "310.00"
     assert flat["NET (income minus spending)"][2] == "1690.00"
     assert "Credit Card Payment" not in flat
+
+
+def test_apply_budget_from_an_earlier_month(db):
+    acct = make_account(db, "Checking", "other")
+    g = add(db, acct, "2026-06-05", "Kroger", -5000, "Groceries")
+    budgets.set_budgets(db, "2026-09", {g: 40000})
+    budgets.set_budgets(db, "2027-01", {g: 45000})          # a later change stays
+    budgets.set_budgets(db, "2026-11", {g: 50000}, start_month="2026-07")
+    assert budgets.effective_budgets(db, "2026-06") == {}                # before the start: unchanged
+    assert budgets.effective_budgets(db, "2026-07") == {g: 50000}
+    assert budgets.effective_budgets(db, "2026-09") == {g: 50000}        # replaced the Sep budget
+    assert budgets.effective_budgets(db, "2026-12") == {g: 50000}
+    assert budgets.effective_budgets(db, "2027-02") == {g: 45000}        # later change kept
+    assert budgets.first_month_with_data(db) == "2026-06"
+    # Clearing from a start month removes the budget for that range only
+    budgets.set_budgets(db, "2026-11", {g: 0}, start_month="2026-10")
+    assert budgets.effective_budgets(db, "2026-09") == {g: 50000}
+    assert budgets.effective_budgets(db, "2026-10") == {}
+    assert budgets.effective_budgets(db, "2027-02") == {g: 45000}

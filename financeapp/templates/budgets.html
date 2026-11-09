@@ -57,7 +57,18 @@
     <tr><td colspan="5" class="muted">No expense categories yet. <a href="{{ url_for('import_view') }}">Import a statement</a> first.</td></tr>
     {% endfor %}
   </table>
-  {% if status %}<p><button>Save budgets</button></p>{% endif %}
+  {% if status %}
+  <fieldset class="scope">
+    <legend>Apply these budgets to</legend>
+    <label><input type="radio" name="scope" value="forward" checked> {{ month_name }} and later months</label>
+    <label><input type="radio" name="scope" value="from" id="scope-from">
+      Every month starting from
+      <input type="month" name="start_month" value="{{ first_month if first_month < month else month }}" max="{{ month }}"
+             aria-label="Start month" onfocus="document.getElementById('scope-from').checked = true">
+      through {{ month_name }} and later</label>
+  </fieldset>
+  <p><button>Save budgets</button></p>
+  {% endif %}
 </form>
 
 {% if history %}
