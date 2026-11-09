@@ -134,8 +134,29 @@ def create_app(test_config=None):
             search=(args.get("q") or "").strip() or None,
             removed=args.get("removed") == "1",
         )
+        sort = args.get("sort") if args.get("sort") in ledger.SORTS else "date"
+        direction = args.get("dir")
+        descending = (direction == "desc") if direction in ("asc", "desc") else ledger.DEFAULT_DESCENDING[sort]
+        # Current query, so sort links keep the filters and filter links keep the sort
+        query = {
+            "month": month or "all",
+            "category": list(picked),
+            "account": filters["account_id"],
+            "direction": filters["direction"],
+            "q": filters["search"],
+            "removed": "1" if filters["removed"] else None,
+            "sort": sort if sort != "date" or not descending else None,
+            "dir": ("desc" if descending else "asc") if (sort != "date" or not descending) else None,
+        }
+
+        def sort_url(col):
+            # Clicking the active column flips it; a new column starts in its natural order
+            desc = (not descending) if col == sort else ledger.DEFAULT_DESCENDING[col]
+            params = {**query, "sort": col, "dir": "desc" if desc else "asc"}
+            return url_for("transactions", **{k: v for k, v in params.items() if v})
+
         db = dbmod.get_db()
-        txs = ledger.filter_transactions(db, **filters)
+        txs = ledger.filter_transactions(db, **filters, sort=sort, descending=descending)
         counted = [t for t in txs if ledger.counts_in_totals(t)]
         accounts = db.execute("SELECT * FROM accounts ORDER BY name").fetchall()
         return render_template(
@@ -150,19 +171,15 @@ def create_app(test_config=None):
             total_out=sum(-t["amount_cents"] for t in counted if t["amount_cents"] < 0),
             n_transfers=len(txs) - len(counted),
             next_url=request.full_path,
-            chips=_filter_chips(month, picked, filters, categories(), accounts),
+            chips=_filter_chips(query, month, picked, filters, categories(), accounts),
+            sort=sort,
+            descending=descending,
+            sort_url=sort_url,
+            query=query,
         )
 
-    def _filter_chips(month, picked, filters, cats, accounts):
+    def _filter_chips(base, month, picked, filters, cats, accounts):
         """(label, url without that filter) for each active filter."""
-        base = {
-            "month": month or "all",
-            "category": list(picked),
-            "account": filters["account_id"],
-            "direction": filters["direction"],
-            "q": filters["search"],
-            "removed": "1" if filters["removed"] else None,
-        }
 
         def without(key, value=None):
             params = {**base, "category": list(base["category"])}

@@ -113,6 +113,10 @@
   .tag { display:inline-block; font-size:.75em; padding:0 .45em; border-radius:999px; border:1px solid #3d5a7e; color:var(--secondary-text); background:#223349; vertical-align:.1em; }
   tr.transfer td { color:var(--muted); }
   tr.transfer td.neg, tr.transfer td.pos { color:var(--muted); }
+  th.sortable a { color:inherit; text-decoration:none; display:inline-flex; align-items:center; gap:.3rem; }
+  th.sortable a:hover, th.sortable.sorted a { color:var(--fg); }
+  th.sortable .sort-arrow { font-size:.85em; opacity:.45; }
+  th.sortable.sorted .sort-arrow { opacity:1; color:var(--primary-text); }
   .chip-clear { font-size:.85em; }
   .select-hint { display:none; } .select-hint.show { display:inline; }
 
