@@ -133,7 +133,7 @@ def test_budgets_page_save_and_export(client):
     assert client.get("/budgets?month=2026-11").status_code == 200
     r = client.post("/budgets", data={"month": "2026-11", "budget-1": "$10.00", "budget-3": ""}, follow_redirects=True)
     html = r.get_data(as_text=True)
-    assert "Saved 1 budget change" in html
+    assert "Saved income and budgets" in html and "(1 change(s))" in html
     assert "46%" in html and "heat-green" in html   # Groceries: 4.58 of 10.00
     assert "Last 6 months" in html
     r = client.get("/export.csv?month=2026-11")
@@ -158,3 +158,17 @@ def test_budgets_apply_from_a_start_month(client):
     r = client.post("/budgets", data={"month": "2026-11", "budget-1": "10", "scope": "from",
                                       "start_month": "2027-01"}, follow_redirects=True)
     assert b"must be on or before" in r.data
+
+
+def test_budgets_page_income_and_savings(client):
+    upload(client, "truist_sample.csv", account_id="auto")
+    # Paychecks/Salary is category 4 in the sample (an income category)
+    r = client.post("/budgets", data={"month": "2026-11", "budget-4": "3000", "actual-4": "",
+                                      "new_income": "Side job", "new_income_expected": "200",
+                                      "new_income_actual": "150", "budget-1": "100"}, follow_redirects=True)
+    html = r.get_data(as_text=True)
+    assert "Left to save or invest" in html and "Side job" in html
+    assert "$3,200.00" in html          # planned income: 3000 + 200
+    assert "$3,100.00" in html          # planned left: 3200 - 100 groceries budget
+    assert "$2,550.00" in html          # actual income: 2400 imported + 150 entered
+    assert "entered · imported" in html

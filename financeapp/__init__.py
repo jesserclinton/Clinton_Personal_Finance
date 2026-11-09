@@ -78,19 +78,34 @@ def create_app(test_config=None):
         db = dbmod.get_db()
         month = _month_arg()
         if request.method == "POST":
-            amounts = {}
-            for key, value in request.form.items():
-                if not key.startswith("budget-"):
-                    continue
-                cid = int(key.removeprefix("budget-"))
-                value = value.strip().replace("$", "").replace(",", "")
+            def cents(value):
+                value = (value or "").strip().replace("$", "").replace(",", "")
+                if not value:
+                    return None
                 try:
-                    amounts[cid] = round(float(value) * 100) if value else 0
+                    return max(round(float(value) * 100), 0)
                 except ValueError:
-                    flash(f"\"{value}\" isn't an amount.", "error")
-                    return redirect(url_for("budgets_view", month=month))
-                if amounts[cid] < 0:
-                    amounts[cid] = 0
+                    raise ValueError(f"\"{value}\" isn't an amount") from None
+
+            amounts, actuals = {}, {}
+            try:
+                for key, value in request.form.items():
+                    if key.startswith("budget-"):
+                        amounts[int(key.removeprefix("budget-"))] = cents(value) or 0
+                    elif key.startswith("actual-"):
+                        actuals[int(key.removeprefix("actual-"))] = cents(value)
+                new_income = request.form.get("new_income", "").strip()
+                if new_income:
+                    cid = ledger.get_or_create_category(db, new_income, "income")
+                    ledger.set_category_kind(db, cid, "income")
+                    amounts[cid] = cents(request.form.get("new_income_expected")) or 0
+                    actual = cents(request.form.get("new_income_actual"))
+                    if actual is not None:
+                        actuals[cid] = actual
+            except ValueError as exc:
+                flash(f"{exc}.", "error")
+                return redirect(url_for("budgets_view", month=month))
+            budgetmod.set_income_actuals(db, month, actuals)
             start = request.form.get("start_month") if request.form.get("scope") == "from" else None
             if start:
                 try:
@@ -106,9 +121,12 @@ def create_app(test_config=None):
                 flash(f"Applied {n} budget(s) from {budgetmod.month_label(start)} through "
                       f"{budgetmod.month_label(month)} and onward.", "ok")
             else:
-                flash(f"Saved {n} budget change(s) from {budgetmod.month_label(month)} onward.", "ok")
+                flash(f"Saved income and budgets for {budgetmod.month_label(month)} onward "
+                      f"({n} change(s)).", "ok")
             return redirect(url_for("budgets_view", month=month))
         status = budgetmod.budget_status(db, month)
+        income = budgetmod.income_status(db, month)
+        savings = budgetmod.savings_summary(db, month, income, status)
         months, history = budgetmod.heatmap_history(db, month)
         budgeted = [r for r in status if r["budget_cents"]]
         return render_template(
@@ -118,6 +136,8 @@ def create_app(test_config=None):
             prev_month=budgetmod.month_add(month, -1),
             next_month=budgetmod.month_add(month, 1),
             status=status,
+            income=income,
+            savings=savings,
             budgeted=budgeted,
             total_budget=sum(r["budget_cents"] for r in budgeted),
             total_budgeted_spent=sum(r["spent_cents"] for r in budgeted),

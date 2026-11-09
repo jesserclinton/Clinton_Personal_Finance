@@ -154,18 +154,111 @@ def heatmap_history(db, end_month, months=6):
     return month_list, rows
 
 
+def _imported_income(db, month):
+    """{category_id or None: cents} received this month (income categories and uncategorised)."""
+    rows = db.execute(
+        """SELECT t.category_id, SUM(t.amount_cents) AS amount
+           FROM transactions t LEFT JOIN categories c ON c.id = t.category_id
+           WHERE substr(t.date, 1, 7) = ? AND t.removed = 0 AND t.amount_cents > 0
+             AND (c.kind = 'income' OR t.category_id IS NULL)
+           GROUP BY t.category_id""",
+        (month,),
+    ).fetchall()
+    return {r["category_id"]: r["amount"] for r in rows}
+
+
+def set_income_actuals(db, month, amounts):
+    """Save hand-entered actual income {category_id: cents or None}; None clears the override."""
+    for cid, cents in amounts.items():
+        if cents is None:
+            db.execute("DELETE FROM income_actuals WHERE category_id = ? AND month = ?", (cid, month))
+        else:
+            db.execute(
+                """INSERT INTO income_actuals (category_id, month, amount_cents) VALUES (?, ?, ?)
+                   ON CONFLICT(category_id, month) DO UPDATE SET amount_cents = excluded.amount_cents""",
+                (cid, month, cents),
+            )
+    db.commit()
+
+
+def income_status(db, month):
+    """One row per income category: expected (carries forward), imported, entered, actual, difference."""
+    expected = effective_budgets(db, month)
+    imported = _imported_income(db, month)
+    entered = {r["category_id"]: r["amount_cents"] for r in db.execute(
+        "SELECT category_id, amount_cents FROM income_actuals WHERE month = ?", (month,))}
+    cats = db.execute(
+        "SELECT id, name FROM categories WHERE kind = 'income' ORDER BY name COLLATE NOCASE"
+    ).fetchall()
+    rows = []
+    for c in cats:
+        e = expected.get(c["id"], 0)
+        imp = imported.get(c["id"], 0)
+        manual = entered.get(c["id"])
+        actual = manual if manual is not None else imp
+        rows.append({
+            "category_id": c["id"], "category": c["name"], "expected_cents": e,
+            "imported_cents": imp, "entered_cents": manual, "actual_cents": actual,
+            "difference_cents": actual - e,
+        })
+    if imported.get(None):
+        rows.append({
+            "category_id": None, "category": "Uncategorized", "expected_cents": 0,
+            "imported_cents": imported[None], "entered_cents": None,
+            "actual_cents": imported[None], "difference_cents": imported[None],
+        })
+    return rows
+
+
+def _uncategorised_spending(db, month):
+    return db.execute(
+        """SELECT -COALESCE(SUM(amount_cents), 0) FROM transactions
+           WHERE substr(date, 1, 7) = ? AND removed = 0 AND category_id IS NULL AND amount_cents < 0""",
+        (month,),
+    ).fetchone()[0]
+
+
+def savings_summary(db, month, income=None, status=None):
+    """Planned and actual money left over to move to savings or investments."""
+    income = income if income is not None else income_status(db, month)
+    status = status if status is not None else budget_status(db, month)
+    expected_income = sum(r["expected_cents"] for r in income)
+    actual_income = sum(r["actual_cents"] for r in income)
+    budgeted = sum(r["budget_cents"] for r in status)
+    spent = sum(r["spent_cents"] for r in status) + _uncategorised_spending(db, month)
+    return {
+        "expected_income": expected_income, "actual_income": actual_income,
+        "budgeted_spending": budgeted, "actual_spending": spent,
+        "planned_left": expected_income - budgeted, "actual_left": actual_income - spent,
+    }
+
+
 def _money(cents):
     return f"{(cents or 0) / 100:.2f}"
 
 
 def export_month_csv(db, month):
-    """CSV of where the month ended: income sources, spending per category vs budget, net."""
+    """CSV of where the month ended: income vs expected, spending vs budget, what's left to save."""
     out = io.StringIO()
     w = csv.writer(out)
     w.writerow([f"Month: {month_label(month)}"])
     w.writerow([])
 
+    income = income_status(db, month)
     w.writerow(["INCOME"])
+    w.writerow(["Category", "Expected", "Actual", "Difference", "Actual entered by hand?"])
+    for r in income:
+        if not r["expected_cents"] and not r["actual_cents"]:
+            continue
+        w.writerow([r["category"], _money(r["expected_cents"]) if r["expected_cents"] else "",
+                    _money(r["actual_cents"]), _money(r["difference_cents"]),
+                    "yes" if r["entered_cents"] is not None else ""])
+    w.writerow(["Total income", _money(sum(r["expected_cents"] for r in income)),
+                _money(sum(r["actual_cents"] for r in income)),
+                _money(sum(r["difference_cents"] for r in income)), ""])
+    w.writerow([])
+
+    w.writerow(["INCOME SOURCES (imported)"])
     w.writerow(["Category", "Source", "Amount"])
     sources = db.execute(
         """SELECT COALESCE(c.name, 'Uncategorized') AS category, t.description AS source,
@@ -176,21 +269,16 @@ def export_month_csv(db, month):
            GROUP BY category, source ORDER BY category COLLATE NOCASE, amount DESC""",
         (month,),
     ).fetchall()
-    # Refunds in an expense category reduce that category's spending instead.
-    total_income = sum(r["amount"] for r in sources)
     for r in sources:
         w.writerow([r["category"], r["source"], _money(r["amount"])])
-    w.writerow(["Total income", "", _money(total_income)])
     w.writerow([])
 
     w.writerow(["SPENDING"])
     w.writerow(["Category", "Budget", "Spent", "Remaining", "% of budget used"])
     status = budget_status(db, month)
-    total_spent = 0
     for r in status:
         if not r["spent_cents"] and not r["budget_cents"]:
             continue
-        total_spent += r["spent_cents"]
         w.writerow([
             r["category"],
             _money(r["budget_cents"]) if r["budget_cents"] else "",
@@ -198,20 +286,19 @@ def export_month_csv(db, month):
             _money(r["remaining_cents"]) if r["remaining_cents"] is not None else "",
             f"{r['pct'] * 100:.0f}%" if r["pct"] is not None else "",
         ])
-    uncategorised = db.execute(
-        """SELECT -COALESCE(SUM(amount_cents), 0) FROM transactions
-           WHERE substr(date, 1, 7) = ? AND removed = 0 AND category_id IS NULL AND amount_cents < 0""",
-        (month,),
-    ).fetchone()[0]
+    uncategorised = _uncategorised_spending(db, month)
     if uncategorised > 0:
-        total_spent += uncategorised
         w.writerow(["Uncategorized", "", _money(uncategorised), "", ""])
-    total_budget = sum(r["budget_cents"] for r in status)
-    w.writerow(["Total spending", _money(total_budget) if total_budget else "", _money(total_spent),
-                _money(total_budget - total_spent) if total_budget else "", ""])
+    s = savings_summary(db, month, income, status)
+    w.writerow(["Total spending", _money(s["budgeted_spending"]) if s["budgeted_spending"] else "",
+                _money(s["actual_spending"]),
+                _money(s["budgeted_spending"] - s["actual_spending"]) if s["budgeted_spending"] else "", ""])
     w.writerow([])
 
-    w.writerow(["NET (income minus spending)", "", _money(total_income - total_spent)])
+    w.writerow(["LEFT TO SAVE OR INVEST", "Planned", "Actual"])
+    w.writerow(["Income", _money(s["expected_income"]), _money(s["actual_income"])])
+    w.writerow(["Spending", _money(s["budgeted_spending"]), _money(s["actual_spending"])])
+    w.writerow(["Left over", _money(s["planned_left"]), _money(s["actual_left"])])
     return out.getvalue()
 
 

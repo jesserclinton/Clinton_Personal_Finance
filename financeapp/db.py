@@ -53,7 +53,16 @@ CREATE TABLE IF NOT EXISTS rules (
     category_id INTEGER NOT NULL REFERENCES categories(id)
 );
 
--- Monthly budget per category (used by the budgets/heatmap step)
+-- Actual income you enter by hand for a month, overriding what was imported
+-- (e.g. a paycheck that lands in an account you don't import).
+CREATE TABLE IF NOT EXISTS income_actuals (
+    category_id INTEGER NOT NULL REFERENCES categories(id),
+    month TEXT NOT NULL,
+    amount_cents INTEGER NOT NULL,
+    PRIMARY KEY (category_id, month)
+);
+
+-- Monthly budget per category. For income categories this is expected income.
 CREATE TABLE IF NOT EXISTS budgets (
     category_id INTEGER NOT NULL REFERENCES categories(id),
     month TEXT NOT NULL,                 -- YYYY-MM

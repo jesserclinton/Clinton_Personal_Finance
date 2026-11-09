@@ -84,16 +84,18 @@ def test_export_csv(db):
                   VALUES (?, '2026-11-06', 'Mystery', -1000, 'M', 'fpx')""", (acct,))
     db.commit()
     budgets.set_budgets(db, "2026-11", {g: 40000})
+    pay = db.execute("SELECT id FROM categories WHERE name='Paycheck'").fetchone()[0]
+    budgets.set_budgets(db, "2026-11", {pay: 250000})
     rows = list(csv.reader(io.StringIO(budgets.export_month_csv(db, "2026-11"))))
-    flat = {r[0]: r for r in rows if r}
     assert rows[0] == ["Month: November 2026"]
-    assert flat["Paycheck"] == ["Paycheck", "Acme Payroll", "2000.00"]
-    assert flat["Total income"][2] == "2000.00"
-    assert flat["Groceries"] == ["Groceries", "400.00", "300.00", "100.00", "75%"]
-    assert flat["Uncategorized"][2] == "10.00"
-    assert flat["Total spending"][2] == "310.00"
-    assert flat["NET (income minus spending)"][2] == "1690.00"
-    assert "Credit Card Payment" not in flat
+    assert ["Paycheck", "2500.00", "2000.00", "-500.00", ""] in rows
+    assert ["Paycheck", "Acme Payroll", "2000.00"] in rows
+    assert ["Total income", "2500.00", "2000.00", "-500.00", ""] in rows
+    assert ["Groceries", "400.00", "300.00", "100.00", "75%"] in rows
+    assert ["Uncategorized", "", "10.00", "", ""] in rows
+    assert ["Total spending", "400.00", "310.00", "90.00", ""] in rows
+    assert ["Left over", "2100.00", "1690.00"] in rows
+    assert not any(r and r[0] == "Credit Card Payment" for r in rows)
 
 
 def test_apply_budget_from_an_earlier_month(db):
@@ -113,3 +115,23 @@ def test_apply_budget_from_an_earlier_month(db):
     assert budgets.effective_budgets(db, "2026-09") == {g: 50000}
     assert budgets.effective_budgets(db, "2026-10") == {}
     assert budgets.effective_budgets(db, "2027-02") == {g: 45000}
+
+
+def test_income_expected_actual_and_savings(db):
+    acct = make_account(db, "Checking", "other")
+    pay = add(db, acct, "2026-11-01", "Acme Payroll", 200000, "Paycheck")
+    side = ledger.get_or_create_category(db, "Side job", "income")
+    g = add(db, acct, "2026-11-02", "Kroger", -30000, "Groceries")
+    budgets.set_budgets(db, "2026-11", {pay: 400000, side: 50000, g: 50000})
+    budgets.set_income_actuals(db, "2026-11", {side: 60000})       # paid outside imported accounts
+    rows = {r["category"]: r for r in budgets.income_status(db, "2026-11")}
+    assert rows["Paycheck"]["actual_cents"] == 200000 and rows["Paycheck"]["difference_cents"] == -200000
+    assert rows["Side job"]["actual_cents"] == 60000 and rows["Side job"]["entered_cents"] == 60000
+    s = budgets.savings_summary(db, "2026-11")
+    assert s["planned_left"] == 450000 - 50000
+    assert s["actual_left"] == 260000 - 30000
+    # Expected income carries forward; entered actuals don't
+    assert {r["category"]: r["expected_cents"] for r in budgets.income_status(db, "2026-12")}["Paycheck"] == 400000
+    assert {r["category"]: r["entered_cents"] for r in budgets.income_status(db, "2026-12")}["Side job"] is None
+    budgets.set_income_actuals(db, "2026-11", {side: None})        # clear the override
+    assert {r["category"]: r["actual_cents"] for r in budgets.income_status(db, "2026-11")}["Side job"] == 0
