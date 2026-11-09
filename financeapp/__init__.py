@@ -26,6 +26,8 @@ def create_app(test_config=None):
         ledger.upgrade(dbmod.get_db())
     app.teardown_appcontext(dbmod.close_db)
 
+    app.add_template_filter(budgetmod.over_budget_style, "over_style")
+
     @app.template_filter("money")
     def money(cents):
         cents = cents or 0

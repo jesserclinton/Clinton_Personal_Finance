@@ -24,6 +24,27 @@ def heat_level(pct):
     return level
 
 
+# Over budget, red darkens steadily from the normal red at 100% to the
+# darkest red at OVER_CAP (and stays there beyond it).
+_RED = ((0x8C, 0x3A, 0x32), (0x72, 0x2E, 0x28))       # gradient start/end at 100%
+_DARKEST = ((0x45, 0x16, 0x13), (0x33, 0x10, 0x0E))   # at OVER_CAP and above
+OVER_CAP = 2.0
+
+
+def _mix(a, b, t):
+    return "#" + "".join(f"{round(x + (y - x) * t):02x}" for x, y in zip(a, b))
+
+
+def over_budget_style(pct):
+    """Inline background for pct > 100%: darker the further over. '' otherwise."""
+    if pct is None or pct <= 1:
+        return ""
+    t = min((pct - 1) / (OVER_CAP - 1), 1)
+    start = _mix(_RED[0], _DARKEST[0], t)
+    end = _mix(_RED[1], _DARKEST[1], t)
+    return f"background:linear-gradient(145deg, {start} 0%, {end} 100%)"
+
+
 def month_add(month, delta):
     y, m = map(int, month.split("-"))
     m += delta

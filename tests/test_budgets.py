@@ -135,3 +135,16 @@ def test_income_expected_actual_and_savings(db):
     assert {r["category"]: r["entered_cents"] for r in budgets.income_status(db, "2026-12")}["Side job"] is None
     budgets.set_income_actuals(db, "2026-11", {side: None})        # clear the override
     assert {r["category"]: r["actual_cents"] for r in budgets.income_status(db, "2026-11")}["Side job"] == 0
+
+
+def test_over_budget_red_darkens():
+    assert budgets.over_budget_style(None) == ""
+    assert budgets.over_budget_style(0.9) == ""
+    assert budgets.over_budget_style(1.0) == ""
+    at_110 = budgets.over_budget_style(1.1)
+    at_150 = budgets.over_budget_style(1.5)
+    at_200 = budgets.over_budget_style(2.0)
+    assert at_200 == budgets.over_budget_style(3.5) == \
+        "background:linear-gradient(145deg, #451613 0%, #33100e 100%)"
+    lum = lambda style: sum(int(style[style.index("#") + i:style.index("#") + i + 2], 16) for i in (1, 3, 5))
+    assert lum(at_110) > lum(at_150) > lum(at_200)

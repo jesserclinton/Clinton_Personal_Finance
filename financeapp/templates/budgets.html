@@ -13,6 +13,7 @@
 <div class="legend" aria-label="Colour key">
   Share of budget used:
   {% for floor, name, label in levels %}<span class="swatch heat-{{ name }}">{{ label }}</span>{% endfor %}
+  <span class="swatch over-scale">over 100%: darker the further over</span>
   <span class="swatch heat-none">No budget</span>
 </div>
 
@@ -31,7 +32,7 @@
 <h3>Spending against budget</h3>
 <div class="tiles">
   {% for r in budgeted %}
-  <a class="tile heat-{{ r.level }}" href="{{ url_for('transactions', month=month, category=r.category_id) }}"
+  <a class="tile heat-{{ r.level }}" style="{{ r.pct|over_style }}" href="{{ url_for('transactions', month=month, category=r.category_id) }}"
      title="See {{ r.category }} transactions">
     <div class="name">{{ r.category }}</div>
     <div class="pct">{{ (r.pct * 100)|round|int }}%</div>
@@ -83,7 +84,7 @@
              value="{{ '%.2f'|format(r.budget_cents / 100) if r.budget_cents else '' }}" aria-label="Budget for {{ r.category }}"></td>
       <td class="num">{{ r.spent_cents|money }}</td>
       <td class="num {% if r.remaining_cents is not none and r.remaining_cents < 0 %}neg{% endif %}">{{ r.remaining_cents|money if r.remaining_cents is not none else '' }}</td>
-      <td class="num">{% if r.level %}<span class="pill heat-{{ r.level }}">{{ (r.pct * 100)|round|int }}%</span>{% endif %}</td>
+      <td class="num">{% if r.level %}<span class="pill heat-{{ r.level }}" style="{{ r.pct|over_style }}">{{ (r.pct * 100)|round|int }}%</span>{% endif %}</td>
     </tr>
     {% else %}
     <tr><td colspan="5" class="muted">No expense categories yet. <a href="{{ url_for('import_view') }}">Import a statement</a> first.</td></tr>
@@ -109,7 +110,7 @@
   <tr>
     <td>{{ row.category }}</td>
     {% for c in row.cells %}
-    <td class="cell heat-{{ c.level or 'none' }}"
+    <td class="cell heat-{{ c.level or 'none' }}" style="{{ c.pct|over_style }}"
         title="{{ row.category }}, {{ month_short(c.month) }}: {{ c.spent_cents|money }}{% if c.budget_cents %} of {{ c.budget_cents|money }}{% endif %}">
       {% if c.pct is not none %}{{ (c.pct * 100)|round|int }}%{% else %}<span class="muted">—</span>{% endif %}
     </td>
