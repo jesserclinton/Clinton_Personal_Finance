@@ -5,6 +5,12 @@
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18l-7 8.5V19l-4 2v-7.5z"/></svg>
     Filters
   </button>
+  <label class="search-box">
+    <span class="sr">Search transactions</span>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+    <input type="search" id="tx-search" name="q" form="filters-panel" value="{{ filters.search or '' }}"
+           placeholder="Search descriptions" autocomplete="off" aria-controls="tx-results">
+  </label>
   <span class="spacer"></span>
   <span class="select-hint muted" id="select-hint">Select the transactions to {{ 'restore' if filters.removed else 'remove' }}</span>
   <button type="button" class="secondary" id="select-cancel" hidden>Cancel</button>
@@ -16,7 +22,7 @@
     Confirm <span id="select-count"></span>
   </button>
 </div>
-<div class="chips" aria-label="Active filters">
+<div class="chips" id="tx-chips" aria-label="Active filters">
     {% if not month %}<span class="chip static">All months</span>{% endif %}
     {% for kind, label, url in chips %}
       <a class="chip" href="{{ url }}" title="Remove this filter" aria-label="Remove filter {{ kind }}: {{ label }}">
@@ -55,18 +61,18 @@
         <option value="in" {% if filters.direction == 'in' %}selected{% endif %}>Income only</option>
       </select>
     </label>
-    <label>Search <input type="search" name="q" value="{{ filters.search or '' }}" placeholder="Walmart"></label>
     <label class="row"><input type="checkbox" name="removed" value="1" {% if filters.removed %}checked{% endif %}> Show removed transactions</label>
     {% if query.sort %}<input type="hidden" name="sort" value="{{ query.sort }}"><input type="hidden" name="dir" value="{{ query.dir }}">{% endif %}
     <div class="actions">
       <button>Apply</button>
       <a href="{{ url_for('transactions', month=month or 'all') }}">Clear filters</a>
-      · <a href="{{ url_for('transactions', month='all', category=picked, account=filters.account_id, direction=filters.direction, q=filters.search) }}">All months</a>
+      · <a id="all-months-link" href="{{ url_for('transactions', month='all', category=picked, account=filters.account_id, direction=filters.direction, q=filters.search) }}">All months</a>
     </div>
   </div>
 </form>
 
-<div class="totals">
+<div id="tx-results" aria-busy="false">
+<div class="totals" aria-live="polite">
   <span>Transactions<div>{{ txs|length }}</div></span>
   <span>Spent<div class="neg">{{ total_out|money }}</div></span>
   <span>Income<div class="pos">{{ total_in|money }}</div></span>
@@ -106,6 +112,7 @@
   <tr><td colspan="6" class="muted">No transactions match these filters.</td></tr>
   {% endfor %}
 </table>
+</div>
 
 <dialog id="edit-dialog" aria-labelledby="edit-title">
   <form method="post" id="edit-form">
@@ -116,7 +123,7 @@
       </button>
     </header>
     <p><strong id="edit-desc"></strong><br><span class="muted" id="edit-meta"></span></p>
-    <input type="hidden" name="next" value="{{ next_url }}">
+    <input type="hidden" name="next" id="edit-next" value="{{ next_url }}">
     <label>Category
       <select name="category_id" id="edit-category">
         <option value="">Choose…</option>
@@ -141,23 +148,27 @@
   toggle.addEventListener('click', () => setPanel(panel.hidden));
   document.getElementById('filters-close').addEventListener('click', () => { setPanel(false); toggle.focus(); });
 
-  // Remove / restore selection mode
-  const table = document.getElementById('tx-table');
+  // Remove / restore selection mode. Rows are replaced by live search, so
+  // everything inside the results is looked up fresh and events are delegated.
+  const results = document.getElementById('tx-results');
   const start = document.getElementById('select-start');
   const confirmBtn = document.getElementById('select-confirm');
   const cancel = document.getElementById('select-cancel');
   const hint = document.getElementById('select-hint');
   const count = document.getElementById('select-count');
-  const all = document.getElementById('select-all');
+  const table = () => document.getElementById('tx-table');
+  const all = () => document.getElementById('select-all');
   const boxes = () => [...document.querySelectorAll('input[name=tx]')];
+  let selecting = false;
   const update = () => {
     const n = boxes().filter(b => b.checked).length;
     confirmBtn.disabled = n === 0;
     count.textContent = n ? `(${n})` : '';
-    all.checked = n > 0 && n === boxes().length;
+    all().checked = n > 0 && n === boxes().length;
   };
   const setSelecting = on => {
-    table.classList.toggle('selecting', on);
+    selecting = on;
+    table().classList.toggle('selecting', on);
     start.hidden = on; confirmBtn.hidden = !on; cancel.hidden = !on;
     hint.classList.toggle('show', on);
     if (!on) boxes().forEach(b => b.checked = false);
@@ -165,8 +176,10 @@
   };
   start.addEventListener('click', () => setSelecting(true));
   cancel.addEventListener('click', () => setSelecting(false));
-  all.addEventListener('change', () => { boxes().forEach(b => b.checked = all.checked); update(); });
-  boxes().forEach(b => b.addEventListener('change', update));
+  results.addEventListener('change', e => {
+    if (e.target.id === 'select-all') boxes().forEach(b => b.checked = e.target.checked);
+    if (e.target.id === 'select-all' || e.target.name === 'tx') update();
+  });
   confirmBtn.addEventListener('click', e => {
     const n = boxes().filter(b => b.checked).length;
     const verb = confirmBtn.value === 'restore' ? 'Restore' : 'Remove';
@@ -176,20 +189,63 @@
   // Edit dialog
   const dialog = document.getElementById('edit-dialog');
   const form = document.getElementById('edit-form');
-  document.querySelectorAll('.edit-btn').forEach(btn => btn.addEventListener('click', () => {
+  results.addEventListener('click', e => {
+    const btn = e.target.closest('.edit-btn');
+    if (!btn) return;
     form.reset();
     form.action = btn.dataset.action;
     document.getElementById('edit-category').value = btn.dataset.category;
     document.getElementById('edit-desc').textContent = btn.dataset.desc;
     document.getElementById('edit-meta').textContent = btn.dataset.meta;
     dialog.showModal();
-  }));
+  });
   dialog.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => dialog.close()));
   dialog.addEventListener('click', e => { if (e.target === dialog) dialog.close(); });  // backdrop
   form.addEventListener('submit', e => {
     if (!form.category_id.value && !form.new_category.value.trim()) {
       e.preventDefault(); form.category_id.focus();
     }
+  });
+
+  // Live search: as you type, fetch this page with the new search term and
+  // swap in the results, keeping every other filter and the sort.
+  const search = document.getElementById('tx-search');
+  let timer, inflight, lastQ = search.value.trim();
+  const runSearch = async () => {
+    const q = search.value.trim();
+    if (q === lastQ) return;
+    lastQ = q;
+    const url = new URL(location.href);
+    if (q) url.searchParams.set('q', q); else url.searchParams.delete('q');
+    if (inflight) inflight.abort();
+    inflight = new AbortController();
+    results.setAttribute('aria-busy', 'true');
+    try {
+      const res = await fetch(url, { signal: inflight.signal, headers: { 'X-Requested-With': 'fetch' } });
+      if (!res.ok) throw new Error(res.status);
+      const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
+      const kept = new Set(boxes().filter(b => b.checked).map(b => b.value));
+      // Swap contents, not the containers, so the delegated listeners stay put
+      for (const id of ['tx-results', 'tx-chips']) document.getElementById(id).replaceChildren(...doc.getElementById(id).childNodes);
+      document.getElementById('all-months-link').href = doc.getElementById('all-months-link').getAttribute('href');
+      document.getElementById('edit-next').value = doc.getElementById('edit-next').value;
+      history.replaceState(null, '', url);
+      // Keep remove/restore mode and any ticked rows that are still listed
+      boxes().forEach(b => b.checked = kept.has(b.value));
+      setSelecting(selecting);
+    } catch (err) {
+      if (err.name !== 'AbortError') { lastQ = null; location.href = url; }  // fall back to a normal load
+    } finally {
+      results.setAttribute('aria-busy', 'false');
+    }
+  };
+  search.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(runSearch, 200); });
+  search.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); clearTimeout(timer); runSearch(); }
+  });
+  // "/" jumps to the search box, like many sites
+  document.addEventListener('keydown', e => {
+    if (e.key === '/' && !e.target.closest('input, select, textarea, dialog')) { e.preventDefault(); search.focus(); }
   });
 })();
 </script>

@@ -180,3 +180,14 @@ def test_heatmap_cells_link_to_filtered_transactions(client):
     html = client.get("/budgets?month=2026-11").get_data(as_text=True)
     assert 'href="/transactions?month=2026-11&amp;category=1"' in html
     assert 'href="/transactions?month=2026-08&amp;category=1"' in html   # earlier month in the grid
+
+
+def test_search_box_sits_beside_filters_button(client):
+    html = client.get("/transactions?month=all&q=coffee").get_data(as_text=True)
+    toolbar = html[html.index('class="toolbar"'):html.index('id="filters-panel"')]
+    # The search input lives in the toolbar, still submits with the filters form, and keeps its value
+    assert 'id="tx-search"' in toolbar and 'form="filters-panel"' in toolbar and 'value="coffee"' in toolbar
+    panel = html[html.index('id="filters-panel"'):html.index('</form>', html.index('id="filters-panel"'))]
+    assert 'name="q"' not in panel
+    # Live search swaps these regions in place
+    assert 'id="tx-results"' in html and 'id="tx-chips"' in html
