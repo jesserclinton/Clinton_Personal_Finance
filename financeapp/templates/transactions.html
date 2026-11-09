@@ -131,7 +131,9 @@
       </select>
     </label>
     <label>Or a new category <input name="new_category" placeholder="e.g. Pets"></label>
-    <label class="row"><input type="checkbox" name="remember" checked> Remember for this merchant</label>
+    <input type="hidden" name="remember" value="on">
+    <label class="row"><input type="checkbox" name="only_this" id="edit-only-this"> Only change this transaction</label>
+    <p class="hint muted" id="edit-scope-hint"></p>
     <footer>
       <button type="button" class="secondary" data-close>Cancel</button>
       <button>Save</button>
@@ -197,8 +199,17 @@
     document.getElementById('edit-category').value = btn.dataset.category;
     document.getElementById('edit-desc').textContent = btn.dataset.desc;
     document.getElementById('edit-meta').textContent = btn.dataset.meta;
+    showScope();
     dialog.showModal();
   });
+  // Say what Save will touch: just this row, or this merchant's other rows too
+  const onlyThis = document.getElementById('edit-only-this');
+  const showScope = () => {
+    document.getElementById('edit-scope-hint').textContent = onlyThis.checked
+      ? 'Other transactions from this merchant keep their categories.'
+      : "Also applies to this merchant's other transactions (except ones you set by hand) and to future imports.";
+  };
+  onlyThis.addEventListener('change', showScope);
   dialog.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => dialog.close()));
   dialog.addEventListener('click', e => { if (e.target === dialog) dialog.close(); });  // backdrop
   form.addEventListener('submit', e => {

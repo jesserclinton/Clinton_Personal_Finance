@@ -191,3 +191,28 @@ def test_search_box_sits_beside_filters_button(client):
     assert 'name="q"' not in panel
     # Live search swaps these regions in place
     assert 'id="tx-results"' in html and 'id="tx-chips"' in html
+
+
+def test_edit_only_this_transaction(client, app):
+    upload(client, "truist_sample.csv", account_id="auto")
+    with app.app_context():
+        from financeapp import db as dbmod
+        db = dbmod.get_db()
+        pair = db.execute("""SELECT merchant_key, MIN(id) a, MAX(id) b, MIN(category_id) c FROM transactions
+                             GROUP BY merchant_key HAVING COUNT(*) > 1""").fetchone()
+    assert pair, "fixture needs a merchant with two transactions"
+    # The dialog sends remember=on plus only_this=on when the box is ticked
+    client.post(f"/transactions/{pair['a']}/category",
+                data={"new_category": "One-off", "remember": "on", "only_this": "on", "next": "/transactions"})
+    with app.app_context():
+        db = dbmod.get_db()
+        a, b = (db.execute("SELECT c.name FROM transactions t LEFT JOIN categories c ON c.id = t.category_id WHERE t.id = ?",
+                           (i,)).fetchone()[0] for i in (pair["a"], pair["b"]))
+        assert a == "One-off" and b != "One-off"
+        assert db.execute("SELECT COUNT(*) FROM rules WHERE merchant_key = ?", (pair["merchant_key"],)).fetchone()[0] == 0
+    # Unticked, it still applies to the whole merchant
+    client.post(f"/transactions/{pair['a']}/category",
+                data={"new_category": "Whole merchant", "remember": "on", "next": "/transactions"})
+    with app.app_context():
+        db = dbmod.get_db()
+        assert db.execute("SELECT COUNT(*) FROM rules WHERE merchant_key = ?", (pair["merchant_key"],)).fetchone()[0] == 1
