@@ -23,7 +23,7 @@
   </button>
 </div>
 <div class="chips" id="tx-chips" aria-label="Active filters">
-    {% if not month %}<span class="chip static">All months</span>{% endif %}
+    {% if not month and not filters.after and not filters.through %}<span class="chip static">All months</span>{% endif %}
     {% for kind, label, url in chips %}
       <a class="chip" href="{{ url }}" title="Remove this filter" aria-label="Remove filter {{ kind }}: {{ label }}">
         <span class="chip-kind">{{ kind }}</span> {{ label }}
@@ -62,6 +62,8 @@
       </select>
     </label>
     <label class="row"><input type="checkbox" name="removed" value="1" {% if filters.removed %}checked{% endif %}> Show removed transactions</label>
+    {% if filters.after %}<input type="hidden" name="after" value="{{ filters.after }}">{% endif %}
+    {% if filters.through %}<input type="hidden" name="through" value="{{ filters.through }}">{% endif %}
     {% if query.sort %}<input type="hidden" name="sort" value="{{ query.sort }}"><input type="hidden" name="dir" value="{{ query.dir }}">{% endif %}
     <div class="actions">
       <button>Apply</button>

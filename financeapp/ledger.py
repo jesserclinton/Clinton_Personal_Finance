@@ -252,7 +252,7 @@ DEFAULT_DESCENDING = {"date": True, "description": False, "amount": False, "cate
 
 def filter_transactions(db, month=None, category_ids=(), uncategorised=False,
                         account_id=None, direction=None, search=None, removed=False,
-                        sort="date", descending=True):
+                        after=None, through=None, sort="date", descending=True):
     """Transactions matching every filter given. Empty filters match all.
 
     category_ids and uncategorised combine with OR (show these categories,
@@ -262,6 +262,13 @@ def filter_transactions(db, month=None, category_ids=(), uncategorised=False,
     if month:
         where.append("substr(t.date, 1, 7) = ?")
         params.append(month)
+    # Date range: after is exclusive, through inclusive (as balances are end-of-day)
+    if after:
+        where.append("t.date > ?")
+        params.append(after)
+    if through:
+        where.append("t.date <= ?")
+        params.append(through)
     cat_terms = []
     if category_ids:
         cat_terms.append(f"t.category_id IN ({','.join('?' * len(category_ids))})")

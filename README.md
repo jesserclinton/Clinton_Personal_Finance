@@ -31,6 +31,16 @@ You can change any transaction's category on the Transactions page.
 Re-importing a file, or one with an overlapping date range, skips
 transactions that are already in the database.
 
+## Checking balances
+
+On the **Accounts** page, type in the balance your bank shows for an
+account (checking, savings or a card) and the date it's from. Once an
+account has two balances, the app checks that the transactions imported
+between those dates add up to the change, and shows any difference. Click
+the change amount to see exactly which transactions were counted. Use the
+posted (current) balance, since pending transactions aren't imported. You
+can add accounts you don't import, like savings, to track their balance.
+
 ## Getting your CSVs
 
 - **USAA:** desktop site, open the account, Export/Download from the
@@ -57,5 +67,6 @@ pytest
 - [x] Monthly budgets per category with a heatmap (0–20% blue, 20–60% green,
       60–80% yellow, 80–100%+ red)
 - [x] CSV export of income and spending per category
+- [x] Balance checks: enter bank balances and compare with imported transactions
 - [ ] PDF statement import for older history
 - [ ] Automated ingest (later, after the prototype)
